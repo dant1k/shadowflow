@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}AI Анализ - ShadowFlow{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-brain"></i> AI Анализ аномалий
+        </h1>
+    </div>
+</div>
+
+<!-- Риск-скор и основные метрики -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body text-center">
+                <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                <div class="metric-value" id="riskScore">-</div>
+                <div>Риск-скор</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body text-center">
+                <i class="fas fa-bug fa-2x mb-2"></i>
+                <div class="metric-value" id="anomalyCount">-</div>
+                <div>Аномальных сделок</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body text-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <div class="metric-value" id="walletClusters">-</div>
+                <div>Кластеров кошельков</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-line fa-2x mb-2"></i>
+                <div class="metric-value" id="manipulationMarkets">-</div>
+                <div>Рынков с манипуляциями</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Графики анализа -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-pie"></i> Распределение аномалий</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="anomalyChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-bar"></i> Факторы риска</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="riskFactorsChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Временные паттерны -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-clock"></i> Временные паттерны</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="temporalChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-network-wired"></i> Кластеры кошельков</h5>
+            </div>
+            <div class="card-body">
+                <div id="walletClustersList">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Топ аномальные сделки -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-exclamation-circle"></i> Топ аномальные сделки</h5>
+                <button class="btn btn-outline-primary btn-sm" onclick="refreshAnalysis()">
+                    <i class="fas fa-sync-alt"></i> Обновить
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="anomaliesList">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Загрузка аномалий...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .risk-high {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    }
+    
+    .risk-medium {
+        background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+    }
+    
+    .risk-low {
+        background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+    }
+    
+    .anomaly-card {
+        border-left: 4px solid #e74c3c;
+        margin-bottom: 1rem;
+    }
+    
+    .cluster-item {
+        background: #f8f9fa;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .wallet-address {
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+        background: #e9ecef;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        margin: 0.25rem;
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let anomalyChart = null;
+let riskFactorsChart = null;
+let temporalChart = null;
+
+// Загрузка данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadAIAnalysis();
+});
+
+async function loadAIAnalysis() {
+    try {
+        // Загружаем AI-анализ
+        const analysisResponse = await fetch('/api/ai-analysis');
+        const analysisData = await analysisResponse.json();
+        
+        if (analysisData.success) {
+            updateMetrics(analysisData.analysis);
+            updateCharts(analysisData.analysis);
+            updateWalletClusters(analysisData.analysis.wallet_clusters);
+        }
+        
+        // Загружаем аномальные сделки
+        const anomaliesResponse = await fetch('/api/anomalies');
+        const anomaliesData = await anomaliesResponse.json();
+        
+        if (anomaliesData.success) {
+            displayAnomalies(anomaliesData.anomalies);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке AI-анализа:', error);
+        showAlert('danger', 'Ошибка при загрузке AI-анализа');
+    }
+}
+
+function updateMetrics(analysis) {
+    const riskScore = analysis.risk_score;
+    document.getElementById('riskScore').textContent = riskScore.toFixed(1);
+    
+    // Обновляем цвет карточки риска
+    const riskCard = document.querySelector('.metric-card');
+    riskCard.className = 'card metric-card';
+    if (riskScore >= 70) {
+        riskCard.classList.add('risk-high');
+    } else if (riskScore >= 40) {
+        riskCard.classList.add('risk-medium');
+    } else {
+        riskCard.classList.add('risk-low');
+    }
+    
+    document.getElementById('anomalyCount').textContent = analysis.anomalies.count;
+    document.getElementById('walletClusters').textContent = analysis.wallet_clusters.count;
+    document.getElementById('manipulationMarkets').textContent = analysis.price_manipulation.suspicious_markets;
+}
+
+function updateCharts(analysis) {
+    // График распределения аномалий
+    const anomalyCtx = document.getElementById('anomalyChart').getContext('2d');
+    if (anomalyChart) {
+        anomalyChart.destroy();
+    }
+    
+    anomalyChart = new Chart(anomalyCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Нормальные', 'Аномальные'],
+            datasets: [{
+                data: [
+                    analysis.total_trades - analysis.anomalies.count,
+                    analysis.anomalies.count
+                ],
+                backgroundColor: ['#27ae60', '#e74c3c']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    
+    // График факторов риска
+    const riskCtx = document.getElementById('riskFactorsChart').getContext('2d');
+    if (riskFactorsChart) {
+        riskFactorsChart.destroy();
+    }
+    
+    const riskFactors = analysis.risk_factors || [];
+    riskFactorsChart = new Chart(riskCtx, {
+        type: 'bar',
+        data: {
+            labels: riskFactors.map(f => f[0].replace('_', ' ')),
+            datasets: [{
+                label: 'Риск',
+                data: riskFactors.map(f => f[1]),
+                backgroundColor: '#3498db'
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 10
+                }
+            }
+        }
+    });
+    
+    // График временных паттернов
+    const temporalCtx = document.getElementById('temporalChart').getContext('2d');
+    if (temporalChart) {
+        temporalChart.destroy();
+    }
+    
+    const hourlyData = analysis.temporal_patterns.hourly_distribution || {};
+    temporalChart = new Chart(temporalCtx, {
+        type: 'line',
+        data: {
+            labels: Object.keys(hourlyData).sort(),
+            datasets: [{
+                label: 'Сделки по часам',
+                data: Object.keys(hourlyData).sort().map(hour => hourlyData[hour]),
+                borderColor: '#9b59b6',
+                backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function updateWalletClusters(walletClusters) {
+    const container = document.getElementById('walletClustersList');
+    
+    if (walletClusters.count === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-info-circle fa-2x mb-2"></i>
+                <p>Кластеры кошельков не найдены</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const clustersHtml = Object.entries(walletClusters.clusters).map(([clusterId, wallets]) => `
+        <div class="cluster-item">
+            <h6>${clusterId.replace('_', ' ').toUpperCase()}</h6>
+            <p class="text-muted mb-2">${wallets.length} кошельков</p>
+            <div>
+                ${wallets.slice(0, 5).map(wallet => 
+                    `<span class="wallet-address">${wallet.substring(0, 12)}...</span>`
+                ).join('')}
+                ${wallets.length > 5 ? `<span class="text-muted">+${wallets.length - 5} еще</span>` : ''}
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = clustersHtml;
+}
+
+function displayAnomalies(anomalies) {
+    const container = document.getElementById('anomaliesList');
+    
+    if (anomalies.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                <p>Аномальные сделки не найдены</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const anomaliesHtml = anomalies.slice(0, 10).map(anomaly => `
+        <div class="card anomaly-card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6 class="market-name">${anomaly.market_name || 'Неизвестный рынок'}</h6>
+                        <p class="text-muted mb-2">${anomaly.market_question || ''}</p>
+                        <div class="d-flex flex-wrap gap-2 mb-2">
+                            <span class="badge bg-${anomaly.side === 'YES' ? 'success' : 'danger'}">
+                                ${anomaly.side}
+                            </span>
+                            <span class="badge bg-warning text-dark">
+                                <i class="fas fa-exclamation-triangle"></i> Аномалия
+                            </span>
+                        </div>
+                        <div class="wallet-address">${anomaly.wallet}</div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="fw-bold fs-5 mb-1">${formatCurrency(anomaly.amount)}</div>
+                        <div class="text-muted small mb-2">Объем</div>
+                        <div class="fw-bold text-danger">${anomaly.anomaly_score.toFixed(3)}</div>
+                        <div class="text-muted small">Скор аномалии</div>
+                        <div class="text-muted small">${formatTime(anomaly.timestamp)}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = anomaliesHtml;
+}
+
+function refreshAnalysis() {
+    loadAIAnalysis();
+    showAlert('info', 'AI-анализ обновлен');
+}
+</script>
+{% endblock %}

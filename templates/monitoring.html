@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+
+{% block title %}Real-time Мониторинг - ShadowFlow{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-broadcast-tower"></i> Real-time Мониторинг
+            <span class="badge bg-success ms-2" id="connectionStatus">Подключено</span>
+        </h1>
+    </div>
+</div>
+
+<!-- Статус системы -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card status-card">
+            <div class="card-body text-center">
+                <i class="fas fa-heartbeat fa-2x mb-2 text-success"></i>
+                <div class="status-value" id="monitoringStatus">Активен</div>
+                <div>Мониторинг</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card status-card">
+            <div class="card-body text-center">
+                <i class="fas fa-users fa-2x mb-2 text-info"></i>
+                <div class="status-value" id="connectedClients">1</div>
+                <div>Клиентов</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card status-card">
+            <div class="card-body text-center">
+                <i class="fas fa-bell fa-2x mb-2 text-warning"></i>
+                <div class="status-value" id="totalAlerts">0</div>
+                <div>Алертов</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card status-card">
+            <div class="card-body text-center">
+                <i class="fas fa-clock fa-2x mb-2 text-primary"></i>
+                <div class="status-value" id="lastUpdate">-</div>
+                <div>Обновление</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Текущие метрики -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-chart-line"></i> Текущие метрики</h5>
+                <button class="btn btn-outline-primary btn-sm" onclick="forceAnalysis()">
+                    <i class="fas fa-sync-alt"></i> Обновить
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <div class="metric-item">
+                            <div class="metric-label">Риск-скор</div>
+                            <div class="metric-value" id="currentRiskScore">-</div>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="metric-item">
+                            <div class="metric-label">Аномалии</div>
+                            <div class="metric-value" id="currentAnomalies">-</div>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="metric-item">
+                            <div class="metric-label">Кластеры</div>
+                            <div class="metric-value" id="currentClusters">-</div>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="metric-item">
+                            <div class="metric-label">Сделки</div>
+                            <div class="metric-value" id="currentTrades">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cog"></i> Настройки порогов</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Риск-скор</label>
+                    <input type="number" class="form-control" id="riskThreshold" value="50" min="0" max="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Процент аномалий</label>
+                    <input type="number" class="form-control" id="anomalyThreshold" value="15" min="0" max="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Количество кластеров</label>
+                    <input type="number" class="form-control" id="clusterThreshold" value="20" min="0">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Рост объема (разы)</label>
+                    <input type="number" class="form-control" id="volumeThreshold" value="2" min="1" step="0.1">
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="updateThresholds()">
+                    <i class="fas fa-save"></i> Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- График риска в реальном времени -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-area"></i> Риск-скор в реальном времени</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="riskChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Алерты -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-exclamation-triangle"></i> Активные алерты</h5>
+                <button class="btn btn-outline-danger btn-sm" onclick="clearAlerts()">
+                    <i class="fas fa-trash"></i> Очистить
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="alertsContainer">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-check-circle fa-2x mb-2"></i>
+                        <p>Активных алертов нет</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-card {
+        border-left: 4px solid #28a745;
+    }
+    
+    .metric-item {
+        text-align: center;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .metric-label {
+        font-size: 0.9rem;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+    
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #2c3e50;
+    }
+    
+    .alert-item {
+        border-left: 4px solid #dc3545;
+        margin-bottom: 1rem;
+        animation: slideIn 0.3s ease-out;
+    }
+    
+    .alert-item.medium {
+        border-left-color: #ffc107;
+    }
+    
+    .alert-item.low {
+        border-left-color: #17a2b8;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .risk-high {
+        color: #dc3545 !important;
+    }
+    
+    .risk-medium {
+        color: #ffc107 !important;
+    }
+    
+    .risk-low {
+        color: #28a745 !important;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let websocket = null;
+let riskChart = null;
+let riskData = [];
+let maxDataPoints = 20;
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initWebSocket();
+    initRiskChart();
+});
+
+function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.hostname}:8765`;
+    
+    websocket = new WebSocket(wsUrl);
+    
+    websocket.onopen = function(event) {
+        console.log('WebSocket подключен');
+        updateConnectionStatus(true);
+    };
+    
+    websocket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+    
+    websocket.onclose = function(event) {
+        console.log('WebSocket отключен');
+        updateConnectionStatus(false);
+        // Переподключение через 5 секунд
+        setTimeout(initWebSocket, 5000);
+    };
+    
+    websocket.onerror = function(error) {
+        console.error('Ошибка WebSocket:', error);
+        updateConnectionStatus(false);
+    };
+}
+
+function handleWebSocketMessage(data) {
+    switch(data.type) {
+        case 'current_state':
+            updateCurrentMetrics(data.stats);
+            break;
+        case 'analysis_update':
+            updateCurrentMetrics(data.analysis);
+            updateRiskChart(data.analysis.risk_score);
+            if (data.alerts && data.alerts.length > 0) {
+                displayAlerts(data.alerts);
+            }
+            break;
+        case 'status':
+            updateSystemStatus(data);
+            break;
+        case 'error':
+            showAlert('danger', data.message);
+            break;
+    }
+}
+
+function updateConnectionStatus(connected) {
+    const statusElement = document.getElementById('connectionStatus');
+    if (connected) {
+        statusElement.textContent = 'Подключено';
+        statusElement.className = 'badge bg-success ms-2';
+    } else {
+        statusElement.textContent = 'Отключено';
+        statusElement.className = 'badge bg-danger ms-2';
+    }
+}
+
+function updateCurrentMetrics(stats) {
+    document.getElementById('currentRiskScore').textContent = stats.risk_score ? stats.risk_score.toFixed(1) : '-';
+    document.getElementById('currentAnomalies').textContent = stats.anomalies_count || '-';
+    document.getElementById('currentClusters').textContent = stats.wallet_clusters || '-';
+    document.getElementById('currentTrades').textContent = stats.total_trades || '-';
+    
+    // Обновляем цвет риск-скора
+    const riskElement = document.getElementById('currentRiskScore');
+    const riskScore = stats.risk_score || 0;
+    riskElement.className = 'metric-value';
+    
+    if (riskScore >= 70) {
+        riskElement.classList.add('risk-high');
+    } else if (riskScore >= 40) {
+        riskElement.classList.add('risk-medium');
+    } else {
+        riskElement.classList.add('risk-low');
+    }
+}
+
+function updateSystemStatus(status) {
+    document.getElementById('monitoringStatus').textContent = status.monitoring_active ? 'Активен' : 'Остановлен';
+    document.getElementById('connectedClients').textContent = status.connected_clients || 0;
+    document.getElementById('totalAlerts').textContent = status.total_alerts || 0;
+    
+    if (status.last_analysis) {
+        const lastUpdate = new Date(status.last_analysis);
+        document.getElementById('lastUpdate').textContent = lastUpdate.toLocaleTimeString();
+    }
+}
+
+function initRiskChart() {
+    const ctx = document.getElementById('riskChart').getContext('2d');
+    riskChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Риск-скор',
+                data: [],
+                borderColor: '#e74c3c',
+                backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Риск-скор'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Время'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+
+function updateRiskChart(riskScore) {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString();
+    
+    riskData.push({
+        time: timeLabel,
+        value: riskScore
+    });
+    
+    // Ограничиваем количество точек
+    if (riskData.length > maxDataPoints) {
+        riskData.shift();
+    }
+    
+    // Обновляем график
+    riskChart.data.labels = riskData.map(d => d.time);
+    riskChart.data.datasets[0].data = riskData.map(d => d.value);
+    riskChart.update('none');
+}
+
+function displayAlerts(alerts) {
+    const container = document.getElementById('alertsContainer');
+    
+    if (alerts.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                <p>Активных алертов нет</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const alertsHtml = alerts.map(alert => `
+        <div class="alert alert-${getAlertClass(alert.severity)} alert-item" role="alert">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="alert-heading">
+                        <i class="fas fa-${getAlertIcon(alert.type)}"></i>
+                        ${getAlertTitle(alert.type)}
+                    </h6>
+                    <p class="mb-1">${alert.message}</p>
+                    <small class="text-muted">${new Date(alert.timestamp).toLocaleString()}</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-${getSeverityClass(alert.severity)}">${alert.severity.toUpperCase()}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = alertsHtml;
+}
+
+function getAlertClass(severity) {
+    switch(severity) {
+        case 'high': return 'danger';
+        case 'medium': return 'warning';
+        case 'low': return 'info';
+        default: return 'secondary';
+    }
+}
+
+function getSeverityClass(severity) {
+    switch(severity) {
+        case 'high': return 'danger';
+        case 'medium': return 'warning';
+        case 'low': return 'info';
+        default: return 'secondary';
+    }
+}
+
+function getAlertIcon(type) {
+    switch(type) {
+        case 'high_risk': return 'exclamation-triangle';
+        case 'high_anomalies': return 'bug';
+        case 'many_clusters': return 'users';
+        case 'volume_spike': return 'chart-line';
+        case 'suspicious_patterns': return 'clock';
+        case 'price_manipulation': return 'dollar-sign';
+        default: return 'bell';
+    }
+}
+
+function getAlertTitle(type) {
+    switch(type) {
+        case 'high_risk': return 'Высокий риск';
+        case 'high_anomalies': return 'Много аномалий';
+        case 'many_clusters': return 'Много кластеров';
+        case 'volume_spike': return 'Рост объема';
+        case 'suspicious_patterns': return 'Подозрительные паттерны';
+        case 'price_manipulation': return 'Манипуляции с ценами';
+        default: return 'Алерт';
+    }
+}
+
+function forceAnalysis() {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+            command: 'force_analysis'
+        }));
+    }
+}
+
+function updateThresholds() {
+    const thresholds = {
+        risk_score: parseFloat(document.getElementById('riskThreshold').value),
+        anomaly_percentage: parseFloat(document.getElementById('anomalyThreshold').value),
+        cluster_count: parseInt(document.getElementById('clusterThreshold').value),
+        volume_spike: parseFloat(document.getElementById('volumeThreshold').value)
+    };
+    
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+            command: 'update_thresholds',
+            thresholds: thresholds
+        }));
+        showAlert('success', 'Пороги обновлены');
+    }
+}
+
+function clearAlerts() {
+    document.getElementById('alertsContainer').innerHTML = `
+        <div class="text-center text-muted">
+            <i class="fas fa-check-circle fa-2x mb-2"></i>
+            <p>Активных алертов нет</p>
+        </div>
+    `;
+}
+
+// Обработка закрытия страницы
+window.addEventListener('beforeunload', function() {
+    if (websocket) {
+        websocket.close();
+    }
+});
+</script>
+{% endblock %}

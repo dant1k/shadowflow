@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Анализ сетей - ShadowFlow{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-network-wired"></i> Анализ сетей кошельков
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Граф сети -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-project-diagram"></i> Интерактивная сеть кошельков</h5>
+                <div>
+                    <button class="btn btn-outline-primary btn-sm me-2" onclick="resetNetworkView()">
+                        <i class="fas fa-home"></i> Сброс
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="refreshNetworkData()">
+                        <i class="fas fa-sync-alt"></i> Обновить
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="network-container" style="width: 100%; height: 600px; border: 1px solid #dee2e6; border-radius: 8px;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Информационная панель -->
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6><i class="fas fa-info-circle"></i> Информация о узле</h6>
+            </div>
+            <div class="card-body">
+                <div id="node-info">
+                    <p class="text-muted">Выберите узел для просмотра информации</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6><i class="fas fa-chart-bar"></i> Статистика сети</h6>
+            </div>
+            <div class="card-body">
+                <div id="network-stats">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6><i class="fas fa-palette"></i> Легенда</h6>
+            </div>
+            <div class="card-body">
+                <div class="legend-item">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="legend-color" style="background-color: #e74c3c; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Кластер 1</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="legend-color" style="background-color: #3498db; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Кластер 2</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="legend-color" style="background-color: #2ecc71; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Кластер 3</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="legend-color" style="background-color: #f39c12; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Кластер 4</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="legend-color" style="background-color: #9b59b6; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Кластер 5</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="legend-color" style="background-color: #95a5a6; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px;"></div>
+                        <span>Неизвестный</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Детальная информация о кластерах -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-layer-group"></i> Детальная информация о кластерах</h5>
+            </div>
+            <div class="card-body">
+                <div id="clusters-details">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Загрузка информации о кластерах...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .network-tooltip {
+        position: absolute;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 1000;
+    }
+    
+    .legend-item {
+        font-size: 14px;
+    }
+    
+    .cluster-detail {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: #f8f9fa;
+    }
+    
+    .wallet-list {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .wallet-item {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 4px;
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/js/network_visualization.js"></script>
+<script>
+let networkViz = null;
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initNetworkVisualization();
+    loadNetworkData();
+});
+
+function initNetworkVisualization() {
+    const container = document.getElementById('network-container');
+    networkViz = new NetworkVisualization('network-container', container.offsetWidth, 600);
+}
+
+async function loadNetworkData() {
+    try {
+        // Загружаем кластеры кошельков
+        const clustersResponse = await fetch('/api/wallet-clusters');
+        const clustersData = await clustersResponse.json();
+        
+        // Загружаем сделки
+        const tradesResponse = await fetch('/api/trades');
+        const tradesData = await tradesResponse.json();
+        
+        if (clustersData.success && tradesData.success) {
+            // Обновляем визуализацию
+            networkViz.updateData(clustersData.clusters, tradesData.trades);
+            
+            // Обновляем статистику
+            updateNetworkStats(clustersData.clusters, tradesData.trades);
+            
+            // Обновляем детали кластеров
+            updateClustersDetails(clustersData.clusters, tradesData.trades);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка при загрузке данных сети:', error);
+        showAlert('danger', 'Ошибка при загрузке данных сети');
+    }
+}
+
+function updateNetworkStats(clusters, trades) {
+    const statsContainer = document.getElementById('network-stats');
+    
+    const totalWallets = Object.values(clusters).flat().length;
+    const totalClusters = Object.keys(clusters).length;
+    const totalTrades = trades.length;
+    const totalVolume = trades.reduce((sum, trade) => sum + trade.amount, 0);
+    
+    statsContainer.innerHTML = `
+        <div class="row text-center">
+            <div class="col-6 mb-3">
+                <div class="fw-bold fs-4">${totalWallets}</div>
+                <div class="text-muted small">Кошельков</div>
+            </div>
+            <div class="col-6 mb-3">
+                <div class="fw-bold fs-4">${totalClusters}</div>
+                <div class="text-muted small">Кластеров</div>
+            </div>
+            <div class="col-6 mb-3">
+                <div class="fw-bold fs-4">${totalTrades}</div>
+                <div class="text-muted small">Сделок</div>
+            </div>
+            <div class="col-6 mb-3">
+                <div class="fw-bold fs-4">$${(totalVolume / 1000000).toFixed(1)}M</div>
+                <div class="text-muted small">Объем</div>
+            </div>
+        </div>
+    `;
+}
+
+function updateClustersDetails(clusters, trades) {
+    const container = document.getElementById('clusters-details');
+    
+    if (Object.keys(clusters).length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-info-circle fa-2x mb-2"></i>
+                <p>Кластеры кошельков не найдены</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const clustersHtml = Object.entries(clusters).map(([clusterId, wallets]) => {
+        // Анализируем активность кластера
+        const clusterTrades = trades.filter(trade => wallets.includes(trade.wallet));
+        const totalVolume = clusterTrades.reduce((sum, trade) => sum + trade.amount, 0);
+        const uniqueMarkets = new Set(clusterTrades.map(trade => trade.market_id)).size;
+        
+        return `
+            <div class="cluster-detail">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h6 class="mb-0">${clusterId.replace('_', ' ').toUpperCase()}</h6>
+                    <span class="badge bg-primary">${wallets.length} кошельков</span>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="fw-bold">${clusterTrades.length}</div>
+                            <div class="text-muted small">Сделок</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="fw-bold">$${(totalVolume / 1000).toFixed(1)}K</div>
+                            <div class="text-muted small">Объем</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-center">
+                            <div class="fw-bold">${uniqueMarkets}</div>
+                            <div class="text-muted small">Рынков</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="wallet-list">
+                    <h6 class="small mb-2">Кошельки в кластере:</h6>
+                    ${wallets.slice(0, 10).map(wallet => `
+                        <div class="wallet-item">${wallet}</div>
+                    `).join('')}
+                    ${wallets.length > 10 ? `<div class="text-muted small text-center">... и еще ${wallets.length - 10} кошельков</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = clustersHtml;
+}
+
+function resetNetworkView() {
+    if (networkViz) {
+        networkViz.resetView();
+    }
+}
+
+function refreshNetworkData() {
+    loadNetworkData();
+    showAlert('info', 'Данные сети обновлены');
+}
+
+// Обработка изменения размера окна
+window.addEventListener('resize', function() {
+    if (networkViz) {
+        const container = document.getElementById('network-container');
+        networkViz.width = container.offsetWidth;
+        networkViz.svg.attr('width', networkViz.width);
+    }
+});
+</script>
+{% endblock %}
