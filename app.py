@@ -10,6 +10,7 @@ from datetime import datetime
 from analyzer.cluster import TradeClusterAnalyzer
 from api.polymarket import PolymarketAPI
 from ai.anomaly_detector import AnomalyDetector
+from ai.predictive_analyzer import PredictiveAnalyzer
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'shadowflow-secret-key-2024'
@@ -18,6 +19,7 @@ app.config['SECRET_KEY'] = 'shadowflow-secret-key-2024'
 analyzer = TradeClusterAnalyzer(sync_threshold_seconds=180)
 api = PolymarketAPI()
 ai_detector = AnomalyDetector()
+predictive_analyzer = PredictiveAnalyzer()
 
 @app.route('/')
 def index():
@@ -93,6 +95,16 @@ def network_analysis_page():
 def monitoring_page():
     """Страница real-time мониторинга"""
     return render_template('monitoring.html')
+
+@app.route('/predictions')
+def predictions_page():
+    """Страница с предсказательной аналитикой"""
+    return render_template('predictions.html')
+
+@app.route('/early-warnings')
+def early_warnings_page():
+    """Страница с ранними предупреждениями"""
+    return render_template('early_warnings.html')
 
 @app.route('/api/cluster/<int:cluster_id>')
 def get_cluster_details(cluster_id):
@@ -198,6 +210,110 @@ def get_wallet_clusters():
             'success': True,
             'clusters': wallet_clusters,
             'count': len(wallet_clusters)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictions')
+def get_predictions():
+    """API endpoint для получения предсказаний"""
+    try:
+        trades = api.load_from_cache()
+        clusters = analyzer.find_all_clusters()
+        
+        if not trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных для анализа'
+            }), 400
+        
+        # Получаем предсказания
+        predictions = predictive_analyzer.get_predictions_summary(trades, clusters)
+        
+        return jsonify({
+            'success': True,
+            'predictions': predictions
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/early-warnings')
+def get_early_warnings():
+    """API endpoint для получения ранних предупреждений"""
+    try:
+        trades = api.load_from_cache()
+        clusters = analyzer.find_all_clusters()
+        
+        if not trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных для анализа'
+            }), 400
+        
+        # Генерируем ранние предупреждения
+        warnings = predictive_analyzer.generate_early_warnings(trades, clusters)
+        
+        return jsonify({
+            'success': True,
+            'warnings': warnings,
+            'count': len(warnings)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/trends')
+def get_trends():
+    """API endpoint для получения анализа трендов"""
+    try:
+        trades = api.load_from_cache()
+        
+        if not trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных для анализа'
+            }), 400
+        
+        # Анализируем тренды
+        trends = predictive_analyzer.analyze_trends(trades)
+        
+        return jsonify({
+            'success': True,
+            'trends': trends
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/train-models')
+def train_models():
+    """API endpoint для обучения ML моделей"""
+    try:
+        trades = api.load_from_cache()
+        clusters = analyzer.find_all_clusters()
+        
+        if not trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных для обучения'
+            }), 400
+        
+        # Обучаем модели
+        predictive_analyzer.train_models(trades, clusters)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Модели успешно обучены'
         })
     except Exception as e:
         return jsonify({
