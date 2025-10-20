@@ -11,6 +11,8 @@ from analyzer.cluster import TradeClusterAnalyzer
 from api.polymarket import PolymarketAPI
 from ai.anomaly_detector import AnomalyDetector
 from ai.predictive_analyzer import PredictiveAnalyzer
+import threading
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'shadowflow-secret-key-2024'
@@ -20,6 +22,9 @@ analyzer = TradeClusterAnalyzer(sync_threshold_seconds=180)
 api = PolymarketAPI()
 ai_detector = AnomalyDetector()
 predictive_analyzer = PredictiveAnalyzer()
+
+# WebSocket клиенты для уведомлений
+websocket_clients = []
 
 @app.route('/')
 def index():
@@ -58,9 +63,9 @@ def get_summary():
             'error': str(e)
         }), 500
 
-@app.route('/api/update-data')
-def update_data():
-    """API endpoint для обновления данных"""
+@app.route('/api/update-data-old')
+def update_data_old():
+    """API endpoint для обновления данных (старая версия)"""
     try:
         hours_back = request.args.get('hours', 6, type=int)
         trades = api.update_trades_data(hours_back)
@@ -95,6 +100,11 @@ def network_analysis_page():
 def monitoring_page():
     """Страница real-time мониторинга"""
     return render_template('monitoring.html')
+
+@app.route('/realtime')
+def realtime():
+    """Страница мониторинга реального времени"""
+    return render_template('realtime.html')
 
 @app.route('/predictions')
 def predictions_page():
@@ -320,6 +330,210 @@ def train_models():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/ml-models')
+def get_ml_models():
+    """API endpoint для получения информации о ML моделях"""
+    try:
+        # Получаем сводку по продвинутым моделям
+        model_summary = predictive_analyzer.advanced_ml.get_model_summary()
+        
+        return jsonify({
+            'success': True,
+            'models': model_summary
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/market-info/<market_id>')
+def api_market_info(market_id):
+    """API endpoint для получения информации о конкретном рынке"""
+    try:
+        market_info = api.get_market_info(market_id)
+        return jsonify({
+            'success': True,
+            'market': market_info
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/markets-with-info')
+def api_markets_with_info():
+    """API endpoint для получения всех рынков с названиями и ссылками"""
+    try:
+        trades = api.load_from_cache()
+        if not trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных в кэше'
+            }), 404
+        
+        # Получаем уникальные market_id
+        market_ids = set()
+        for trade in trades:
+            if 'market_id' in trade:
+                market_ids.add(trade['market_id'])
+        
+        # Получаем информацию о каждом рынке
+        markets_info = []
+        for market_id in list(market_ids)[:20]:  # Ограничиваем до 20 для скорости
+            market_info = api.get_market_info(market_id)
+            markets_info.append(market_info)
+        
+        return jsonify({
+            'success': True,
+            'markets': markets_info
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/test-links')
+def test_links():
+    """Тестовая страница для проверки ссылок"""
+    return render_template('test_links.html')
+
+@app.route('/api/notify-update', methods=['POST'])
+def notify_update():
+    """API для уведомления о новых данных"""
+    try:
+        data = request.get_json()
+        notification_type = data.get('type', 'data_updated')
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        
+        # Отправляем уведомление всем WebSocket клиентам
+        for client in websocket_clients:
+            try:
+                client.send(json.dumps({
+                    'type': notification_type,
+                    'timestamp': timestamp,
+                    'message': 'Данные обновлены'
+                }))
+            except:
+                # Удаляем неактивных клиентов
+                websocket_clients.remove(client)
+        
+        return jsonify({'success': True, 'clients_notified': len(websocket_clients)})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scheduler-status')
+def scheduler_status():
+    """API для получения статуса планировщика"""
+    try:
+        # Проверяем статус планировщика
+        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                last_update = data.get('last_updated', 'Неизвестно')
+                update_count = data.get('update_count', 0)
+        else:
+            last_update = 'Неизвестно'
+            update_count = 0
+        
+        return jsonify({
+            'success': True,
+            'status': {
+                'last_update': last_update,
+                'update_count': update_count,
+                'websocket_clients': len(websocket_clients),
+                'is_realtime_active': True
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/update-data', methods=['POST'])
+def update_data():
+    """API для ручного обновления данных"""
+    try:
+        # Запускаем обновление данных
+        markets = api.get_active_markets(limit=50)
+        if not markets:
+            return jsonify({'success': False, 'error': 'Не удалось получить рынки'}), 500
+        
+        # Получаем сделки
+        all_trades = []
+        for market in markets[:20]:
+            market_id = market.get('id', market.get('market_id', ''))
+            if market_id:
+                try:
+                    trades = api.get_market_trades(market_id, limit=50)
+                    if trades:
+                        all_trades.extend(trades)
+                except Exception as e:
+                    print(f"Ошибка при получении сделок для рынка {market_id}: {e}")
+        
+        # Сохраняем в кэш
+        cache_data = {
+            'markets': markets,
+            'trades': all_trades,
+            'last_updated': datetime.now().isoformat(),
+            'source': 'manual_update',
+            'update_count': get_update_count() + 1
+        }
+        
+        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+        
+        # Запускаем анализ кластеров
+        try:
+            analyzer.analyze_clusters()
+        except Exception as e:
+            print(f"Ошибка при анализе кластеров: {e}")
+        
+        return jsonify({
+            'success': True,
+            'markets_count': len(markets),
+            'trades_count': len(all_trades),
+            'last_updated': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/start-scheduler', methods=['POST'])
+def start_scheduler():
+    """API для запуска планировщика"""
+    try:
+        # Здесь можно добавить логику запуска планировщика
+        return jsonify({'success': True, 'message': 'Планировщик запущен'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/stop-scheduler', methods=['POST'])
+def stop_scheduler():
+    """API для остановки планировщика"""
+    try:
+        # Здесь можно добавить логику остановки планировщика
+        return jsonify({'success': True, 'message': 'Планировщик остановлен'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def get_update_count():
+    """Получает количество обновлений из кэша"""
+    try:
+        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('update_count', 0)
+    except:
+        pass
+    return 0
 
 if __name__ == '__main__':
     # Создаем необходимые директории

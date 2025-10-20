@@ -12,6 +12,9 @@ from typing import Dict, List, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
+# Импортируем продвинутые ML модели
+from .advanced_ml_models import AdvancedMLModels
+
 class PredictiveAnalyzer:
     """
     Продвинутый модуль предсказательной аналитики для ShadowFlow
@@ -32,6 +35,9 @@ class PredictiveAnalyzer:
         self.risk_regressor = None
         self.trend_analyzer = None
         self.scaler = StandardScaler()
+        
+        # Инициализируем продвинутые ML модели
+        self.advanced_ml = AdvancedMLModels(data_dir)
         
         # Загружаем обученные модели если существуют
         self.load_models()
@@ -201,60 +207,100 @@ class PredictiveAnalyzer:
         """Обучает ML модели на исторических данных"""
         print("🚀 Начинаем обучение моделей...")
         
-        X, y_class, y_reg = self.create_training_data(trades_data, clusters_data)
+        # Сначала обучаем продвинутые модели
+        print("🤖 Обучаем продвинутые ML модели...")
+        advanced_results = self.advanced_ml.train_advanced_models(trades_data, clusters_data)
         
-        if len(X) == 0:
-            print("⚠️ Недостаточно данных для обучения")
-            return
+        if advanced_results:
+            print("✅ Продвинутые модели обучены успешно!")
+            # Используем лучшие модели из продвинутых
+            best_classifier = None
+            best_regressor = None
+            
+            for name, result in advanced_results.items():
+                if 'classification' in name and 'f1' in result:
+                    if best_classifier is None or result['f1'] > best_classifier[1]:
+                        best_classifier = (result['model'], result['f1'])
+                elif 'regression' in name and 'r2' in result:
+                    if best_regressor is None or result['r2'] > best_regressor[1]:
+                        best_regressor = (result['model'], result['r2'])
+            
+            if best_classifier:
+                self.attack_classifier = best_classifier[0]
+                print(f"✅ Лучший классификатор: F1={best_classifier[1]:.3f}")
+            
+            if best_regressor:
+                self.risk_regressor = best_regressor[0]
+                print(f"✅ Лучший регрессор: R²={best_regressor[1]:.3f}")
         
-        # Разделяем на train/test
-        X_train, X_test, y_class_train, y_class_test, y_reg_train, y_reg_test = train_test_split(
-            X, y_class, y_reg, test_size=0.2, random_state=42
-        )
-        
-        # Нормализуем данные
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_test_scaled = self.scaler.transform(X_test)
-        
-        # Обучаем классификатор атак
-        print("📊 Обучаем классификатор атак...")
-        self.attack_classifier = GradientBoostingClassifier(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=6,
-            random_state=42
-        )
-        self.attack_classifier.fit(X_train_scaled, y_class_train)
-        
-        # Обучаем регрессор рисков
-        print("📈 Обучаем регрессор рисков...")
-        self.risk_regressor = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=10,
-            random_state=42
-        )
-        self.risk_regressor.fit(X_train_scaled, y_reg_train)
-        
-        # Оцениваем качество
-        y_class_pred = self.attack_classifier.predict(X_test_scaled)
-        y_reg_pred = self.risk_regressor.predict(X_test_scaled)
-        
-        accuracy = accuracy_score(y_class_test, y_class_pred)
-        precision = precision_score(y_class_test, y_class_pred, zero_division=0)
-        recall = recall_score(y_class_test, y_class_pred, zero_division=0)
-        f1 = f1_score(y_class_test, y_class_pred, zero_division=0)
-        
-        mse = np.mean((y_reg_test - y_reg_pred) ** 2)
-        mae = np.mean(np.abs(y_reg_test - y_reg_pred))
-        
-        print(f"✅ Классификатор: Accuracy={accuracy:.3f}, Precision={precision:.3f}, Recall={recall:.3f}, F1={f1:.3f}")
-        print(f"✅ Регрессор: MSE={mse:.3f}, MAE={mae:.3f}")
+        # Если продвинутые модели не сработали, обучаем базовые
+        if not self.attack_classifier or not self.risk_regressor:
+            print("🔄 Обучаем базовые модели...")
+            X, y_class, y_reg = self.create_training_data(trades_data, clusters_data)
+            
+            if len(X) == 0:
+                print("⚠️ Недостаточно данных для обучения")
+                return
+            
+            # Разделяем на train/test
+            X_train, X_test, y_class_train, y_class_test, y_reg_train, y_reg_test = train_test_split(
+                X, y_class, y_reg, test_size=0.2, random_state=42
+            )
+            
+            # Нормализуем данные
+            X_train_scaled = self.scaler.fit_transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+            
+            # Обучаем классификатор атак
+            if not self.attack_classifier:
+                print("📊 Обучаем классификатор атак...")
+                self.attack_classifier = GradientBoostingClassifier(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    random_state=42
+                )
+                self.attack_classifier.fit(X_train_scaled, y_class_train)
+            
+            # Обучаем регрессор рисков
+            if not self.risk_regressor:
+                print("📈 Обучаем регрессор рисков...")
+                self.risk_regressor = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42
+                )
+                self.risk_regressor.fit(X_train_scaled, y_reg_train)
+            
+            # Оцениваем качество
+            y_class_pred = self.attack_classifier.predict(X_test_scaled)
+            y_reg_pred = self.risk_regressor.predict(X_test_scaled)
+            
+            accuracy = accuracy_score(y_class_test, y_class_pred)
+            precision = precision_score(y_class_test, y_class_pred, zero_division=0)
+            recall = recall_score(y_class_test, y_class_pred, zero_division=0)
+            f1 = f1_score(y_class_test, y_class_pred, zero_division=0)
+            
+            mse = np.mean((y_reg_test - y_reg_pred) ** 2)
+            mae = np.mean(np.abs(y_reg_test - y_reg_pred))
+            
+            print(f"✅ Классификатор: Accuracy={accuracy:.3f}, Precision={precision:.3f}, Recall={recall:.3f}, F1={f1:.3f}")
+            print(f"✅ Регрессор: MSE={mse:.3f}, MAE={mae:.3f}")
         
         # Сохраняем модели
         self.save_models()
     
     def predict_attack_probability(self, trades_data: List[Dict], clusters_data: List[Dict]) -> float:
         """Предсказывает вероятность координированной атаки"""
+        # Сначала пробуем продвинутые модели
+        try:
+            advanced_predictions = self.advanced_ml.predict_with_ensemble(trades_data, clusters_data)
+            if advanced_predictions and 'attack_probability' in advanced_predictions:
+                return advanced_predictions['attack_probability']
+        except:
+            pass
+        
+        # Если продвинутые модели не работают, используем базовые
         if not self.attack_classifier:
             return 0.5  # Заглушка если модель не обучена
         
@@ -263,11 +309,23 @@ class PredictiveAnalyzer:
             return 0.5
         
         X_scaled = self.scaler.transform(X)
-        probability = self.attack_classifier.predict_proba(X_scaled)[0][1]
+        if hasattr(self.attack_classifier, 'predict_proba'):
+            probability = self.attack_classifier.predict_proba(X_scaled)[0][1]
+        else:
+            probability = self.attack_classifier.predict(X_scaled)[0]
         return float(probability)
     
     def predict_risk_level(self, trades_data: List[Dict], clusters_data: List[Dict]) -> float:
         """Предсказывает уровень риска (0-1)"""
+        # Сначала пробуем продвинутые модели
+        try:
+            advanced_predictions = self.advanced_ml.predict_with_ensemble(trades_data, clusters_data)
+            if advanced_predictions and 'risk_level' in advanced_predictions:
+                return advanced_predictions['risk_level']
+        except:
+            pass
+        
+        # Если продвинутые модели не работают, используем базовые
         if not self.risk_regressor:
             return 0.5  # Заглушка если модель не обучена
         

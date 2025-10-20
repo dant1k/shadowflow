@@ -1,0 +1,19 @@
+{
+  "neural_network_classification": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "auc": 0
+  },
+  "random_forest_regression": {
+    "mse": 0.06490217892671325,
+    "mae": 0.17221839847649945,
+    "r2": -0.06607524852337177
+  },
+  "xgboost_regression": {
+    "mse": 0.06231705778153274,
+    "mae": 0.15991274579185083,
+    "r2": -0.02361236495172281
+  }
+}

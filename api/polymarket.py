@@ -12,7 +12,7 @@ import os
 
 class PolymarketAPI:
     def __init__(self):
-        # Используем актуальные API endpoints из документации
+        # Используем официальные API endpoints из документации Polymarket
         self.gamma_api_url = "https://gamma-api.polymarket.com"
         self.data_api_url = "https://data-api.polymarket.com"
         self.clob_api_url = "https://clob.polymarket.com"
@@ -51,13 +51,82 @@ class PolymarketAPI:
             print(f"❌ Ошибка при получении рынков: {e}")
             return []
     
-    def get_market_trades(self, market_id: str, hours_back: int = 24) -> List[Dict]:
+    def get_market_info(self, market_id):
+        """Получает информацию о конкретном рынке используя официальный Gamma API"""
+        try:
+            # Используем официальный endpoint из документации
+            url = f"{self.gamma_api_url}/markets/{market_id}"
+            response = self.session.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Извлекаем информацию согласно документации
+                question = data.get('question', f'Market {market_id}')
+                slug = data.get('slug', self._create_slug(question))
+                
+                # Используем поиск по ID - это работает надежно для всех рынков
+                market_url = f"https://polymarket.com/search?q={market_id}"
+                
+                market_info = {
+                    'id': market_id,
+                    'name': question,
+                    'url': market_url,
+                    'description': data.get('description', ''),
+                    'end_date': data.get('end_date', ''),
+                    'volume': data.get('volume', 0),
+                    'slug': slug
+                }
+                
+                return market_info
+                
+            else:
+                # Если рынок не найден, используем поиск
+                return {
+                    'id': market_id,
+                    'name': f'Market {market_id}',
+                    'url': f'https://polymarket.com/search?q={market_id}',
+                    'description': '',
+                    'end_date': '',
+                    'volume': 0,
+                    'slug': f'market-{market_id}'
+                }
+            
+        except Exception as e:
+            # В случае ошибки используем поиск
+            return {
+                'id': market_id,
+                'name': f'Market {market_id}',
+                'url': f'https://polymarket.com/search?q={market_id}',
+                'description': '',
+                'end_date': '',
+                'volume': 0,
+                'slug': f'market-{market_id}'
+            }
+    
+    def _create_slug(self, text):
+        """Создает slug из текста для URL"""
+        import re
+        import time
+        
+        # Убираем специальные символы и приводим к нижнему регистру
+        slug = re.sub(r'[^\w\s-]', '', text.lower())
+        # Заменяем пробелы на дефисы
+        slug = re.sub(r'[-\s]+', '-', slug)
+        # Убираем дефисы в начале и конце
+        slug = slug.strip('-')
+        # Ограничиваем длину
+        slug = slug[:50]
+        
+        return slug
+    
+    def get_market_trades(self, market_id: str, hours_back: int = 24, limit: int = 1000) -> List[Dict]:
         """Получает сделки по конкретному рынку используя Data API"""
         try:
             url = f"{self.data_api_url}/trades"
             params = {
                 'market': market_id,
-                'limit': 1000
+                'limit': limit
             }
             
             response = self.session.get(url, params=params, timeout=15)

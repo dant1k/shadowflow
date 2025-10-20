@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  shadowflow:
+    build: .
+    container_name: shadowflow
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/scheduler-status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - shadowflow-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: shadowflow-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - shadowflow
+    networks:
+      - shadowflow-network
+
+networks:
+  shadowflow-network:
+    driver: bridge
+
+volumes:
+  shadowflow-data:
+  shadowflow-logs:

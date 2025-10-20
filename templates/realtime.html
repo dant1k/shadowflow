@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Monitoring - ShadowFlow</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .status-card {
+            transition: all 0.3s ease;
+        }
+        .status-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .update-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .update-indicator.active {
+            background-color: #28a745;
+        }
+        .update-indicator.inactive {
+            background-color: #dc3545;
+        }
+        .log-entry {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            padding: 5px 10px;
+            margin: 2px 0;
+            border-radius: 3px;
+            background-color: #f8f9fa;
+        }
+        .log-entry.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .log-entry.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .log-entry.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-chart-line me-2"></i>ShadowFlow
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">Главная</a>
+                <a class="nav-link" href="/clusters">Кластеры</a>
+                <a class="nav-link active" href="/realtime">Real-time</a>
+                <a class="nav-link" href="/monitoring">Мониторинг</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-4">
+                    <i class="fas fa-sync-alt me-2"></i>Real-time Monitoring
+                    <span class="update-indicator" id="statusIndicator"></span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- Статус системы -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-database fa-2x text-primary mb-2"></i>
+                        <h5>Последнее обновление</h5>
+                        <p class="text-muted" id="lastUpdate">Загрузка...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-sync fa-2x text-success mb-2"></i>
+                        <h5>Количество обновлений</h5>
+                        <p class="text-muted" id="updateCount">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-users fa-2x text-info mb-2"></i>
+                        <h5>WebSocket клиенты</h5>
+                        <p class="text-muted" id="websocketClients">0</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card status-card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clock fa-2x text-warning mb-2"></i>
+                        <h5>Интервал обновления</h5>
+                        <p class="text-muted">5 минут</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Управление -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-cogs me-2"></i>Управление системой</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <button class="btn btn-primary me-2" onclick="manualUpdate()">
+                                    <i class="fas fa-sync me-1"></i>Обновить сейчас
+                                </button>
+                                <button class="btn btn-success me-2" onclick="startScheduler()">
+                                    <i class="fas fa-play me-1"></i>Запустить планировщик
+                                </button>
+                                <button class="btn btn-warning me-2" onclick="stopScheduler()">
+                                    <i class="fas fa-stop me-1"></i>Остановить планировщик
+                                </button>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+                                    <label class="form-check-label" for="autoRefresh">
+                                        Автообновление статуса
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Лог обновлений -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="fas fa-list me-2"></i>Лог обновлений</h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">
+                            <i class="fas fa-trash me-1"></i>Очистить
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="updateLog" style="max-height: 400px; overflow-y: auto;">
+                            <div class="log-entry">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Система мониторинга запущена
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let statusUpdateInterval;
+        let isAutoRefresh = true;
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus();
+            startAutoRefresh();
+            
+            // Обработчик переключателя автообновления
+            document.getElementById('autoRefresh').addEventListener('change', function() {
+                isAutoRefresh = this.checked;
+                if (isAutoRefresh) {
+                    startAutoRefresh();
+                } else {
+                    stopAutoRefresh();
+                }
+            });
+        });
+
+        // Обновление статуса
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/scheduler-status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.status;
+                    
+                    // Обновляем индикатор статуса
+                    const indicator = document.getElementById('statusIndicator');
+                    if (status.is_realtime_active) {
+                        indicator.className = 'update-indicator active pulse';
+                    } else {
+                        indicator.className = 'update-indicator inactive';
+                    }
+                    
+                    // Обновляем данные
+                    document.getElementById('lastUpdate').textContent = 
+                        new Date(status.last_update).toLocaleString('ru-RU');
+                    document.getElementById('updateCount').textContent = status.update_count;
+                    document.getElementById('websocketClients').textContent = status.websocket_clients;
+                    
+                    addLogEntry('Статус обновлен', 'success');
+                } else {
+                    addLogEntry('Ошибка получения статуса: ' + data.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry('Ошибка соединения: ' + error.message, 'error');
+            }
+        }
+
+        // Ручное обновление
+        async function manualUpdate() {
+            addLogEntry('Запуск ручного обновления...', 'warning');
+            
+            try {
+                const response = await fetch('/api/update-data', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLogEntry('Ручное обновление завершено успешно', 'success');
+                } else {
+                    addLogEntry('Ошибка ручного обновления: ' + data.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry('Ошибка ручного обновления: ' + error.message, 'error');
+            }
+            
+            // Обновляем статус после ручного обновления
+            setTimeout(updateStatus, 2000);
+        }
+
+        // Запуск планировщика
+        async function startScheduler() {
+            addLogEntry('Запуск планировщика...', 'warning');
+            
+            try {
+                const response = await fetch('/api/start-scheduler', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLogEntry('Планировщик запущен', 'success');
+                } else {
+                    addLogEntry('Ошибка запуска планировщика: ' + data.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry('Ошибка запуска планировщика: ' + error.message, 'error');
+            }
+        }
+
+        // Остановка планировщика
+        async function stopScheduler() {
+            addLogEntry('Остановка планировщика...', 'warning');
+            
+            try {
+                const response = await fetch('/api/stop-scheduler', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLogEntry('Планировщик остановлен', 'success');
+                } else {
+                    addLogEntry('Ошибка остановки планировщика: ' + data.error, 'error');
+                }
+            } catch (error) {
+                addLogEntry('Ошибка остановки планировщика: ' + error.message, 'error');
+            }
+        }
+
+        // Автообновление
+        function startAutoRefresh() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+            }
+            
+            statusUpdateInterval = setInterval(updateStatus, 10000); // Каждые 10 секунд
+            addLogEntry('Автообновление включено (каждые 10 секунд)', 'success');
+        }
+
+        function stopAutoRefresh() {
+            if (statusUpdateInterval) {
+                clearInterval(statusUpdateInterval);
+                statusUpdateInterval = null;
+            }
+            addLogEntry('Автообновление отключено', 'warning');
+        }
+
+        // Добавление записи в лог
+        function addLogEntry(message, type = 'info') {
+            const log = document.getElementById('updateLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString('ru-RU');
+            const icon = type === 'success' ? 'check-circle' : 
+                        type === 'error' ? 'exclamation-circle' : 
+                        type === 'warning' ? 'exclamation-triangle' : 'info-circle';
+            
+            entry.innerHTML = `<i class="fas fa-${icon} me-1"></i>[${timestamp}] ${message}`;
+            
+            log.insertBefore(entry, log.firstChild);
+            
+            // Ограничиваем количество записей в логе
+            while (log.children.length > 100) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        // Очистка лога
+        function clearLog() {
+            document.getElementById('updateLog').innerHTML = '';
+            addLogEntry('Лог очищен', 'info');
+        }
+
+        // Обработка уведомлений WebSocket
+        function handleWebSocketNotification(data) {
+            addLogEntry(`WebSocket: ${data.message}`, 'success');
+            updateStatus();
+        }
+    </script>
+</body>
+</html>

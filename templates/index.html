@@ -216,40 +216,77 @@ function displayTopClusters(clusters) {
         return;
     }
     
-    const clustersHtml = clusters.map((cluster, index) => `
-        <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <h6 class="market-name">${cluster.market_name}</h6>
-                        <p class="text-muted mb-2">${cluster.market_question}</p>
-                        <div class="d-flex flex-wrap gap-2 mb-2">
-                            <span class="badge bg-${cluster.side === 'YES' ? 'success' : 'danger'}">
-                                ${cluster.side}
-                            </span>
-                            <span class="badge bg-info">
-                                <i class="fas fa-wallet"></i> ${cluster.wallets_count} кошельков
-                            </span>
-                            <span class="badge bg-secondary">
-                                <i class="fas fa-exchange-alt"></i> ${cluster.trades_count} сделок
-                            </span>
+    // Загружаем информацию о рынках асинхронно
+    loadMarketInfoAsync(clusters).then(marketInfoMap => {
+        const clustersHtml = clusters.map((cluster, index) => {
+            const marketInfo = marketInfoMap[cluster.market_id] || {
+                name: cluster.market_name || `Market ${cluster.market_id}`,
+                url: `https://polymarket.com/search?q=${cluster.market_id}`,
+                description: cluster.market_question || 'Нет описания'
+            };
+            
+            return `
+                <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6 class="market-name">
+                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none">
+                                        ${marketInfo.name}
+                                        <i class="fas fa-external-link-alt ms-1"></i>
+                                    </a>
+                                </h6>
+                                <p class="text-muted mb-2">${marketInfo.description}</p>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <span class="badge bg-${cluster.side === 'YES' ? 'success' : 'danger'}">
+                                        ${cluster.side}
+                                    </span>
+                                    <span class="badge bg-info">
+                                        <i class="fas fa-wallet"></i> ${cluster.wallets_count} кошельков
+                                    </span>
+                                    <span class="badge bg-secondary">
+                                        <i class="fas fa-exchange-alt"></i> ${cluster.trades_count} сделок
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <div class="sync-score ${getSyncScoreClass(cluster.sync_score)}">
+                                    ${cluster.sync_score.toFixed(1)}%
+                                </div>
+                                <div class="text-muted small">Синхронность</div>
+                                <div class="fw-bold">${formatCurrency(cluster.total_volume)}</div>
+                                <div class="text-muted small">Объем</div>
+                                <div class="text-muted small">${cluster.time_window_str}</div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        <div class="sync-score ${getSyncScoreClass(cluster.sync_score)}">
-                            ${cluster.sync_score.toFixed(1)}%
-                        </div>
-                        <div class="text-muted small">Синхронность</div>
-                        <div class="fw-bold">${formatCurrency(cluster.total_volume)}</div>
-                        <div class="text-muted small">Объем</div>
-                        <div class="text-muted small">${cluster.time_window_str}</div>
                     </div>
                 </div>
-            </div>
-        </div>
-    `).join('');
+            `;
+        }).join('');
+        
+        container.innerHTML = clustersHtml;
+    });
+}
+
+async function loadMarketInfoAsync(clusters) {
+    const marketIds = [...new Set(clusters.map(c => c.market_id))];
+    const marketInfoMap = {};
     
-    container.innerHTML = clustersHtml;
+    // Загружаем информацию о рынках параллельно
+    const promises = marketIds.map(async (marketId) => {
+        try {
+            const response = await fetch(`/api/market-info/${marketId}`);
+            const data = await response.json();
+            if (data.success) {
+                marketInfoMap[marketId] = data.market;
+            }
+        } catch (error) {
+            console.warn(`Не удалось загрузить информацию о рынке ${marketId}:`, error);
+        }
+    });
+    
+    await Promise.all(promises);
+    return marketInfoMap;
 }
 
 // Обновляем график синхронности при загрузке кластеров

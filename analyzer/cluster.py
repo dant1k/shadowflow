@@ -298,6 +298,24 @@ class TradeClusterAnalyzer:
             
         except Exception as e:
             print(f"Ошибка при сохранении результатов: {e}")
+    
+    def analyze_clusters(self) -> List[Dict]:
+        """Основной метод для анализа кластеров"""
+        try:
+            print("🔄 Запуск анализа кластеров...")
+            clusters = self.find_all_clusters()
+            
+            if clusters:
+                print(f"✅ Найдено {len(clusters)} кластеров")
+                self.save_clusters_to_file(clusters)
+                return clusters
+            else:
+                print("⚠️ Кластеры не найдены")
+                return []
+                
+        except Exception as e:
+            print(f"❌ Ошибка при анализе кластеров: {e}")
+            return []
 
 # Пример использования
 if __name__ == "__main__":

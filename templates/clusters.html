@@ -207,13 +207,27 @@ function displayClusters() {
         return;
     }
     
-    const clustersHtml = pageClusters.map((cluster, index) => `
-        <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
-                        <h5 class="market-name">${cluster.market_name}</h5>
-                        <p class="text-muted mb-2">${cluster.market_question}</p>
+    // Загружаем информацию о рынках асинхронно
+    loadMarketInfoAsync(pageClusters).then(marketInfoMap => {
+        const clustersHtml = pageClusters.map((cluster, index) => {
+            const marketInfo = marketInfoMap[cluster.market_id] || {
+                name: cluster.market_name || `Market ${cluster.market_id}`,
+                url: `https://polymarket.com/search?q=${cluster.market_id}`,
+                description: cluster.market_question || 'Нет описания'
+            };
+            
+            return `
+                <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h5 class="market-name">
+                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none">
+                                        ${marketInfo.name}
+                                        <i class="fas fa-external-link-alt ms-1"></i>
+                                    </a>
+                                </h5>
+                                <p class="text-muted mb-2">${marketInfo.description}</p>
                         
                         <div class="d-flex flex-wrap gap-2 mb-3">
                             <span class="badge bg-${cluster.side === 'YES' ? 'success' : 'danger'} fs-6">
@@ -269,10 +283,32 @@ function displayClusters() {
                 </div>
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
     
     container.innerHTML = clustersHtml;
     updatePagination();
+}
+
+async function loadMarketInfoAsync(clusters) {
+    const marketIds = [...new Set(clusters.map(c => c.market_id))];
+    const marketInfoMap = {};
+    
+    // Загружаем информацию о рынках параллельно
+    const promises = marketIds.map(async (marketId) => {
+        try {
+            const response = await fetch(`/api/market-info/${marketId}`);
+            const data = await response.json();
+            if (data.success) {
+                marketInfoMap[marketId] = data.market;
+            }
+        } catch (error) {
+            console.warn(`Не удалось загрузить информацию о рынке ${marketId}:`, error);
+        }
+    });
+    
+    await Promise.all(promises);
+    return marketInfoMap;
 }
 
 function updatePagination() {
