@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  shadowflow:
+    image: dant1k/shadowflow:latest
+    container_name: shadowflow-prod
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      - shadowflow-data:/app/data
+      - shadowflow-logs:/app/logs
+      - shadowflow-models:/app/data/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/scheduler-status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - shadowflow-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  nginx:
+    image: nginx:alpine
+    container_name: shadowflow-nginx-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - shadowflow
+    networks:
+      - shadowflow-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+networks:
+  shadowflow-network:
+    driver: bridge
+
+volumes:
+  shadowflow-data:
+    driver: local
+  shadowflow-logs:
+    driver: local
+  shadowflow-models:
+    driver: local

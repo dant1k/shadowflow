@@ -96,6 +96,48 @@
             color: #2c3e50;
         }
         
+        .market-link {
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        
+        .market-link:hover {
+            color: #007bff !important;
+        }
+        
+        .market-link i {
+            vertical-align: middle;
+            margin-left: 0.25rem;
+        }
+        
+        .event-card {
+            border-left: 4px solid #007bff;
+            transition: transform 0.2s;
+        }
+        
+        .event-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .event-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+        
+        .event-link {
+            color: #2c3e50;
+        }
+        
+        .event-link:hover {
+            color: #007bff !important;
+        }
+        
+        .event-rank {
+            margin-bottom: 0.5rem;
+        }
+        
         .side-yes {
             color: #27ae60;
             font-weight: bold;
@@ -147,13 +189,15 @@
                         <a class="nav-link" href="/monitoring">
                             <i class="fas fa-broadcast-tower"></i> Мониторинг
                         </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="/realtime">
                             <i class="fas fa-sync-alt"></i> Real-time
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/predictions">
-                            <i class="fas fa-crystal-ball"></i> Прогнозы
+                        <a class="nav-link" href="/predictive">
+                            <i class="fas fa-crystal-ball"></i> Предсказания
                         </a>
                     </li>
                     <li class="nav-item">

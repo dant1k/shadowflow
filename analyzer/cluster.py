@@ -21,7 +21,7 @@ class TradeClusterAnalyzer:
             sync_threshold_seconds: Порог синхронности в секундах (по умолчанию 180 сек = 3 минуты)
         """
         self.sync_threshold = sync_threshold_seconds
-        self.cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        self.cache_file = "/app/data/cache.json"  # Правильный путь для Docker
     
     def load_trades_data(self) -> List[Dict]:
         """Загружает данные о сделках из кэша"""
@@ -43,18 +43,20 @@ class TradeClusterAnalyzer:
     
     def group_trades_by_market_and_side(self, trades: List[Dict]) -> Dict[str, List[Dict]]:
         """
-        Группирует сделки по рынку и направлению (YES/NO)
+        Группирует сделки по рынку и направлению (BUY/SELL)
         
         Returns:
-            Dict с ключами вида "market_id:side" и списками сделок
+            Dict с ключами вида "conditionId:side" и списками сделок
         """
         groups = defaultdict(list)
         
         for trade in trades:
-            market_id = trade.get('market_id', '')
+            # Используем conditionId как market_id
+            market_id = trade.get('conditionId', '')
+            # Используем side (BUY/SELL)
             side = trade.get('side', '')
             
-            if market_id and side in ['YES', 'NO']:
+            if market_id and side in ['BUY', 'SELL']:
                 key = f"{market_id}:{side}"
                 groups[key].append(trade)
         
@@ -118,8 +120,8 @@ class TradeClusterAnalyzer:
             return {}
         
         # Основные метрики
-        wallets = list(set(trade['wallet'] for trade in cluster))
-        total_volume = sum(trade['amount'] for trade in cluster)
+        wallets = list(set(trade['proxyWallet'] for trade in cluster))
+        total_volume = sum(trade['size'] for trade in cluster)
         
         # Временные метрики
         timestamps = [trade['timestamp'] for trade in cluster]
@@ -129,14 +131,15 @@ class TradeClusterAnalyzer:
         
         # Информация о рынке
         market_info = cluster[0]
-        market_name = market_info.get('market_name', 'Неизвестный рынок')
-        market_question = market_info.get('market_question', '')
+        market_name = market_info.get('title', 'Неизвестный рынок')
+        market_question = market_info.get('title', '')
         side = market_info.get('side', '')
+        market_id = market_info.get('conditionId', '')
         
         # Статистика по кошелькам
         wallet_stats = {}
         for trade in cluster:
-            wallet = trade['wallet']
+            wallet = trade['proxyWallet']
             if wallet not in wallet_stats:
                 wallet_stats[wallet] = {
                     'trades_count': 0,
@@ -145,7 +148,7 @@ class TradeClusterAnalyzer:
                 }
             
             wallet_stats[wallet]['trades_count'] += 1
-            wallet_stats[wallet]['total_amount'] += trade['amount']
+            wallet_stats[wallet]['total_amount'] += trade['size']
             wallet_stats[wallet]['avg_price'] = trade['price']
         
         # Форматируем временное окно
@@ -159,7 +162,7 @@ class TradeClusterAnalyzer:
             time_window_str = f"{hours}ч {minutes}м"
         
         return {
-            'market_id': market_info['market_id'],
+            'market_id': market_id,
             'market_name': market_name,
             'market_question': market_question,
             'side': side,
@@ -193,8 +196,8 @@ class TradeClusterAnalyzer:
         
         # Факторы синхронности
         time_factor = 1.0 - (self.get_time_spread(cluster) / self.sync_threshold)
-        volume_factor = min(1.0, sum(trade['amount'] for trade in cluster) / 10000)  # Нормализация по объему
-        wallet_diversity = len(set(trade['wallet'] for trade in cluster)) / len(cluster)
+        volume_factor = min(1.0, sum(trade['size'] for trade in cluster) / 10000)  # Нормализация по объему
+        wallet_diversity = len(set(trade['proxyWallet'] for trade in cluster)) / len(cluster)
         
         # Взвешенная оценка
         sync_score = (time_factor * 0.5 + volume_factor * 0.3 + wallet_diversity * 0.2) * 100

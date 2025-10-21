@@ -1,0 +1,73 @@
+# 🚀 Команды для развертывания ShadowFlow на сервере Hetzner
+# Скопируйте и выполните эти команды на сервере 46.62.233.6
+
+# 1. Обновляем систему
+apt-get update -y
+
+# 2. Устанавливаем Docker
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release wget unzip
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+systemctl start docker
+systemctl enable docker
+
+# 3. Создаем директории
+mkdir -p /opt/shadowflow
+cd /opt/shadowflow
+
+# 4. Создаем docker-compose.yml
+
+# 5. Создаем nginx конфигурацию
+cat > nginx.conf << 'EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream shadowflow {
+        server shadowflow:5001;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        location / {
+            proxy_pass http://shadowflow;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /api/ {
+            proxy_pass http://shadowflow;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+EOF
+
+# 6. Запускаем контейнеры
+docker-compose up -d
+
+# 7. Ждем запуска
+sleep 30
+
+# 8. Проверяем статус
+docker-compose ps
+
+# 9. Проверяем работу API
+curl -s http://localhost:5001/api/predictive/status
+
+# 10. Проверяем веб-интерфейс
+curl -I http://localhost:5001
+
+echo "🎉 ShadowFlow развернут на сервере!"
+echo "🌐 Доступ: http://46.62.233.6:5001"
+echo "🌐 Через nginx: http://46.62.233.6"

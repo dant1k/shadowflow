@@ -16,6 +16,8 @@ class PolymarketAPI:
         self.gamma_api_url = "https://gamma-api.polymarket.com"
         self.data_api_url = "https://data-api.polymarket.com"
         self.clob_api_url = "https://clob.polymarket.com"
+        self.wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/"
+        self.rtds_url = "wss://ws-live-data.polymarket.com"
         self.cache_file = "/Users/Kos/shadowflow/data/cache.json"
         self.session = requests.Session()
         self.session.headers.update({
@@ -27,6 +29,7 @@ class PolymarketAPI:
     def get_active_markets(self, limit: int = 50) -> List[Dict]:
         """Получает список активных рынков используя официальный API"""
         try:
+            # Используем официальный endpoint из документации Polymarket
             url = f"{self.gamma_api_url}/markets"
             params = {
                 'limit': limit,
@@ -38,7 +41,13 @@ class PolymarketAPI:
             response = self.session.get(url, params=params, timeout=15)
             response.raise_for_status()
             
-            markets = response.json()
+            data = response.json()
+            
+            # Обрабатываем разные форматы ответа согласно документации
+            if isinstance(data, dict):
+                markets = data.get('data', []) or data.get('markets', [])
+            else:
+                markets = data
             
             if isinstance(markets, list) and len(markets) > 0:
                 print(f"✅ Получено {len(markets)} активных рынков с Gamma API")
@@ -52,45 +61,50 @@ class PolymarketAPI:
             return []
     
     def get_market_info(self, market_id):
-        """Получает информацию о конкретном рынке используя официальный Gamma API"""
+        """Получает информацию о конкретном рынке используя real-time API"""
         try:
-            # Используем официальный endpoint из документации
+            # Пробуем получить информацию из Gamma API
             url = f"{self.gamma_api_url}/markets/{market_id}"
             response = self.session.get(url, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
                 
-                # Извлекаем информацию согласно документации
+                # Извлекаем информацию согласно официальной документации
                 question = data.get('question', f'Market {market_id}')
-                slug = data.get('slug', self._create_slug(question))
+                description = data.get('description', '')
                 
-                # Используем поиск по ID - это работает надежно для всех рынков
-                market_url = f"https://polymarket.com/search?q={market_id}"
+                # Получаем slug из API или создаем из вопроса
+                slug = data.get('slug') or self._create_slug(question)
+                
+                # Создаем ссылку на событие через поиск (более надежно)
+                # Используем поиск по названию события, так как прямые ссылки могут не работать
+                if question and question != f'Market {market_id}':
+                    # Кодируем название для URL
+                    import urllib.parse
+                    encoded_question = urllib.parse.quote(question)
+                    market_url = f"https://polymarket.com/search?q={encoded_question}"
+                else:
+                    # Если нет названия, используем поиск по market_id
+                    market_url = f"https://polymarket.com/search?q={market_id}"
                 
                 market_info = {
                     'id': market_id,
                     'name': question,
                     'url': market_url,
-                    'description': data.get('description', ''),
-                    'end_date': data.get('end_date', ''),
+                    'description': description,
+                    'end_date': data.get('endDate', ''),
                     'volume': data.get('volume', 0),
-                    'slug': slug
+                    'slug': slug,
+                    'active': data.get('active', True),
+                    'outcomes': data.get('outcomes', [])
                 }
                 
                 return market_info
                 
             else:
-                # Если рынок не найден, используем поиск
-                return {
-                    'id': market_id,
-                    'name': f'Market {market_id}',
-                    'url': f'https://polymarket.com/search?q={market_id}',
-                    'description': '',
-                    'end_date': '',
-                    'volume': 0,
-                    'slug': f'market-{market_id}'
-                }
+                # Если рынок не найден в Gamma API, пробуем Data API
+                return self._get_market_info_from_data_api(market_id)
             
         except Exception as e:
             # В случае ошибки используем поиск
@@ -104,10 +118,145 @@ class PolymarketAPI:
                 'slug': f'market-{market_id}'
             }
     
+    def _get_market_info_from_cache(self, market_id):
+        """Получает информацию о рынке из кэша"""
+        try:
+            # Загружаем кэш
+            trades = self.load_from_cache()
+            if not trades:
+                return None
+            
+            # Ищем первую сделку с этим market_id
+            for trade in trades:
+                if trade.get('conditionId') == market_id:
+                    title = trade.get('title', f'Market {market_id}')
+                    slug = self._create_slug(title)
+                    
+                    # Создаем красивую ссылку на событие в правильном формате
+                    # Используем формат: https://polymarket.com/event/{slug}/{slug}?tid={market_id}
+                    if slug and not slug.startswith('market-'):
+                        market_url = f"https://polymarket.com/event/{slug}/{slug}?tid={market_id}"
+                    else:
+                        # Если slug не подходит, используем поиск
+                        market_url = f"https://polymarket.com/search?q={market_id}"
+                    
+                    return {
+                        'id': market_id,
+                        'name': title,
+                        'url': market_url,
+                        'description': title,
+                        'end_date': '',
+                        'volume': 0,
+                        'slug': slug,
+                        'active': True,
+                        'outcomes': []
+                    }
+            
+            return None
+            
+        except Exception as e:
+            print(f"Ошибка при получении информации о рынке из кэша {market_id}: {e}")
+            return None
+    
+    def _get_market_info_from_data_api(self, market_id):
+        """Получает информацию о рынке из Data API как fallback"""
+        try:
+            # Используем Data API согласно документации
+            url = f"{self.data_api_url}/core/markets/{market_id}"
+            response = self.session.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                question = data.get('question', f'Market {market_id}')
+                slug = data.get('slug') or self._create_slug(question)
+                
+                # Создаем ссылку через поиск
+                if question and question != f'Market {market_id}':
+                    import urllib.parse
+                    encoded_question = urllib.parse.quote(question)
+                    market_url = f"https://polymarket.com/search?q={encoded_question}"
+                else:
+                    market_url = f"https://polymarket.com/search?q={market_id}"
+                
+                return {
+                    'id': market_id,
+                    'name': question,
+                    'url': market_url,
+                    'description': data.get('description', ''),
+                    'end_date': data.get('endDate', ''),
+                    'volume': data.get('volume', 0),
+                    'slug': slug,
+                    'active': data.get('active', True),
+                    'outcomes': data.get('outcomes', [])
+                }
+            else:
+                # Если и Data API не работает, пробуем получить из кэша как последний fallback
+                return self._get_market_info_from_cache_fallback(market_id)
+                
+        except Exception as e:
+            print(f"Ошибка при получении информации о рынке {market_id}: {e}")
+            # В случае ошибки пробуем получить из кэша
+            return self._get_market_info_from_cache_fallback(market_id)
+    
+    def _get_market_info_from_cache_fallback(self, market_id):
+        """Получает информацию о рынке из кэша как последний fallback"""
+        try:
+            # Загружаем кэш
+            trades = self.load_from_cache()
+            if not trades:
+                return self._create_fallback_market_info(market_id)
+            
+            # Ищем первую сделку с этим market_id
+            for trade in trades:
+                if trade.get('conditionId') == market_id:
+                    title = trade.get('title', f'Market {market_id}')
+                    slug = self._create_slug(title)
+                    
+                    # Создаем ссылку через поиск
+                    if title and title != f'Market {market_id}':
+                        import urllib.parse
+                        encoded_title = urllib.parse.quote(title)
+                        market_url = f"https://polymarket.com/search?q={encoded_title}"
+                    else:
+                        market_url = f"https://polymarket.com/search?q={market_id}"
+                    
+                    return {
+                        'id': market_id,
+                        'name': title,
+                        'url': market_url,
+                        'description': title,
+                        'end_date': '',
+                        'volume': 0,
+                        'slug': slug,
+                        'active': True,
+                        'outcomes': []
+                    }
+            
+            return self._create_fallback_market_info(market_id)
+            
+        except Exception as e:
+            print(f"Ошибка при получении информации о рынке из кэша {market_id}: {e}")
+            return self._create_fallback_market_info(market_id)
+    
+    def _create_fallback_market_info(self, market_id):
+        """Создает базовую информацию о рынке как последний fallback"""
+        return {
+            'id': market_id,
+            'name': f'Market {market_id}',
+            'url': f'https://polymarket.com/search?q={market_id}',
+            'description': '',
+            'end_date': '',
+            'volume': 0,
+            'slug': f'market-{market_id}'
+        }
+    
     def _create_slug(self, text):
         """Создает slug из текста для URL"""
         import re
-        import time
+        
+        if not text:
+            return 'market'
         
         # Убираем специальные символы и приводим к нижнему регистру
         slug = re.sub(r'[^\w\s-]', '', text.lower())
@@ -117,6 +266,10 @@ class PolymarketAPI:
         slug = slug.strip('-')
         # Ограничиваем длину
         slug = slug[:50]
+        
+        # Если slug пустой, создаем базовый
+        if not slug:
+            slug = 'market'
         
         return slug
     

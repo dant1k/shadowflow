@@ -79,6 +79,32 @@
     </div>
 </div>
 
+<!-- Актуальные события Polymarket -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-fire"></i> Актуальные события Polymarket
+                </h5>
+                <button class="btn btn-outline-primary btn-sm" onclick="refreshPolymarketEvents()">
+                    <i class="fas fa-sync-alt"></i> Обновить
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="polymarketEvents">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-2">Загрузка событий...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Топ кластеры -->
 <div class="row">
     <div class="col-12">
@@ -112,7 +138,109 @@ let syncScoreChart = null;
 // Загрузка данных при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     loadDashboardData();
+    loadPolymarketEvents();
+    
+    // Обновляем события каждые 5 минут
+    setInterval(loadPolymarketEvents, 300000);
 });
+
+async function loadPolymarketEvents() {
+    try {
+        const response = await fetch('/api/polymarket/events');
+        const data = await response.json();
+        
+        if (data.success) {
+            displayPolymarketEvents(data.events);
+        } else {
+            console.error('Ошибка загрузки событий:', data.error);
+            document.getElementById('polymarketEvents').innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                    <p>Ошибка загрузки событий: ${data.error}</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке событий:', error);
+        document.getElementById('polymarketEvents').innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                <p>Ошибка загрузки событий</p>
+            </div>
+        `;
+    }
+}
+
+function displayPolymarketEvents(events) {
+    const container = document.getElementById('polymarketEvents');
+    
+    if (events.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-info-circle fa-2x mb-2"></i>
+                <p>События не найдены</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const eventsHtml = events.map((event, index) => {
+        const volume = formatCurrency(event.volume);
+        const liquidity = formatCurrency(event.liquidity);
+        const endDate = event.end_date ? new Date(event.end_date).toLocaleDateString('ru-RU') : 'Не указана';
+        
+        return `
+            <div class="card mb-3 event-card">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h6 class="event-title">
+                                <a href="${event.url}" target="_blank" class="text-decoration-none event-link">
+                                    ${event.question}
+                                    <i class="fas fa-external-link-alt ms-1"></i>
+                                </a>
+                            </h6>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                <span class="badge bg-info">
+                                    <i class="fas fa-chart-bar"></i> ${volume}
+                                </span>
+                                <span class="badge bg-success">
+                                    <i class="fas fa-coins"></i> ${liquidity}
+                                </span>
+                                <span class="badge bg-secondary">
+                                    <i class="fas fa-calendar"></i> ${endDate}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div class="event-rank">
+                                <span class="badge bg-primary fs-6">#${index + 1}</span>
+                            </div>
+                            <a href="${event.url}" target="_blank" class="btn btn-outline-primary btn-sm mt-2">
+                                <i class="fas fa-external-link-alt"></i> Открыть
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = eventsHtml;
+}
+
+function refreshPolymarketEvents() {
+    const container = document.getElementById('polymarketEvents');
+    container.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Обновление...</span>
+            </div>
+            <p class="mt-2">Обновление событий...</p>
+        </div>
+    `;
+    loadPolymarketEvents();
+}
 
 async function loadDashboardData() {
     try {
@@ -225,14 +353,20 @@ function displayTopClusters(clusters) {
                 description: cluster.market_question || 'Нет описания'
             };
             
+            // Улучшаем отображение названия рынка
+            let displayName = marketInfo.name;
+            if (!displayName || displayName.startsWith('Market 0x') || displayName.length > 50) {
+                displayName = cluster.market_question || `Market ${cluster.market_id.substring(0, 8)}...`;
+            }
+            
             return `
                 <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-8">
                                 <h6 class="market-name">
-                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none">
-                                        ${marketInfo.name}
+                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none market-link" title="${marketInfo.name}">
+                                        ${displayName}
                                         <i class="fas fa-external-link-alt ms-1"></i>
                                     </a>
                                 </h6>

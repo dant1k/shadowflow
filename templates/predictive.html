@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Предсказательная аналитика - ShadowFlow</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        .navbar-brand {
+            font-weight: bold;
+            color: #2c3e50 !important;
+        }
+        
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .risk-critical {
+            background: linear-gradient(135deg, #ff4757, #ff3742);
+            color: white;
+        }
+        
+        .risk-high {
+            background: linear-gradient(135deg, #ffa502, #ff6348);
+            color: white;
+        }
+        
+        .risk-medium {
+            background: linear-gradient(135deg, #ff9ff3, #f368e0);
+            color: white;
+        }
+        
+        .risk-low {
+            background: linear-gradient(135deg, #54a0ff, #2e86de);
+            color: white;
+        }
+        
+        .risk-minimal {
+            background: linear-gradient(135deg, #5f27cd, #341f97);
+            color: white;
+        }
+        
+        .metric-card {
+            text-align: center;
+            padding: 1.5rem;
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .alert-card {
+            border-left: 4px solid;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-critical {
+            border-left-color: #ff4757;
+            background-color: #fff5f5;
+        }
+        
+        .alert-high {
+            border-left-color: #ffa502;
+            background-color: #fff8f0;
+        }
+        
+        .alert-medium {
+            border-left-color: #ff9ff3;
+            background-color: #fef7ff;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 1rem 0;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Навигация -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-brain"></i> ShadowFlow
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="fas fa-home"></i> Главная
+                </a>
+                <a class="nav-link" href="/clusters">
+                    <i class="fas fa-project-diagram"></i> Кластеры
+                </a>
+                <a class="nav-link" href="/realtime">
+                    <i class="fas fa-sync-alt"></i> Real-time
+                </a>
+                <a class="nav-link active" href="/predictive">
+                    <i class="fas fa-crystal-ball"></i> Предсказания
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Заголовок -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-4 text-center">
+                    <i class="fas fa-crystal-ball text-primary"></i>
+                    Предсказательная аналитика
+                </h1>
+                <p class="lead text-center text-muted">
+                    Прогнозирование координированных атак и раннее предупреждение
+                </p>
+            </div>
+        </div>
+
+        <!-- Статус системы -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-info-circle"></i> Статус системы
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="system-status">
+                            <div class="col-md-3">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="models-count">-</div>
+                                    <div class="metric-label">Моделей</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="alerts-count">-</div>
+                                    <div class="metric-label">Предупреждений</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="features-count">-</div>
+                                    <div class="metric-label">Признаков</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="metric-card">
+                                    <div class="metric-value" id="last-updated">-</div>
+                                    <div class="metric-label">Обновлено</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Риск-скор в реальном времени -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0">
+                            <i class="fas fa-exclamation-triangle"></i> Риск-скор
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center">
+                            <div class="metric-value" id="risk-score">-</div>
+                            <div class="metric-label">Текущий риск</div>
+                            <div class="mt-3">
+                                <span class="badge" id="risk-level">-</span>
+                            </div>
+                        </div>
+                        <div class="mt-3" id="risk-factors">
+                            <!-- Факторы риска будут загружены динамически -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-line"></i> Прогноз атак
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="text-center">
+                            <div class="metric-value" id="attack-probability">-</div>
+                            <div class="metric-label">Вероятность атаки</div>
+                            <div class="mt-3">
+                                <span class="badge" id="attack-level">-</span>
+                            </div>
+                        </div>
+                        <div class="mt-3" id="prediction-details">
+                            <!-- Детали прогноза будут загружены динамически -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Предупреждения -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-bell"></i> Предупреждения
+                        </h5>
+                    </div>
+                    <div class="card-body" id="warnings-container">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-shield-alt fa-3x mb-3"></i>
+                            <p>Нет активных предупреждений</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Анализ трендов -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-area"></i> Анализ трендов
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-container">
+                                    <canvas id="trends-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="chart-container">
+                                    <canvas id="patterns-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Управление -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-cogs"></i> Управление
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" onclick="trainModels()">
+                                    <i class="fas fa-brain"></i> Обучить модели
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-info w-100" onclick="updatePredictions()">
+                                    <i class="fas fa-sync-alt"></i> Обновить прогнозы
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100" onclick="analyzeTrends()">
+                                    <i class="fas fa-chart-line"></i> Анализ трендов
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Загрузка -->
+        <div class="loading" id="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <p class="mt-3">Обработка данных...</p>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        let trendsChart = null;
+        let patternsChart = null;
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSystemStatus();
+            loadRiskScore();
+            loadPredictions();
+            loadWarnings();
+            loadTrends();
+            
+            // Автообновление каждые 30 секунд
+            setInterval(function() {
+                loadRiskScore();
+                loadPredictions();
+                loadWarnings();
+            }, 30000);
+        });
+
+        // Загрузка статуса системы
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch('/api/predictive/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.status;
+                    document.getElementById('models-count').textContent = status.models_available;
+                    document.getElementById('alerts-count').textContent = status.recent_alerts;
+                    document.getElementById('features-count').textContent = status.feature_history_size;
+                    document.getElementById('last-updated').textContent = new Date(status.last_updated).toLocaleTimeString();
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки статуса:', error);
+            }
+        }
+
+        // Загрузка риск-скора
+        async function loadRiskScore() {
+            try {
+                const response = await fetch('/api/predictive/risk-score');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const risk = data.risk_score;
+                    document.getElementById('risk-score').textContent = (risk.score * 100).toFixed(1) + '%';
+                    document.getElementById('risk-level').textContent = risk.level.toUpperCase();
+                    document.getElementById('risk-level').className = `badge bg-${getRiskColor(risk.level)}`;
+                    
+                    // Отображаем факторы риска
+                    const factorsContainer = document.getElementById('risk-factors');
+                    factorsContainer.innerHTML = '';
+                    
+                    risk.factors.forEach(factor => {
+                        const factorDiv = document.createElement('div');
+                        factorDiv.className = 'd-flex justify-content-between align-items-center mb-2';
+                        factorDiv.innerHTML = `
+                            <span>${factor.name}</span>
+                            <span class="badge bg-secondary">${(factor.score * 100).toFixed(1)}%</span>
+                        `;
+                        factorsContainer.appendChild(factorDiv);
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки риск-скора:', error);
+            }
+        }
+
+        // Загрузка прогнозов
+        async function loadPredictions() {
+            try {
+                const response = await fetch('/api/predictive/predict');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const prediction = data.prediction;
+                    document.getElementById('attack-probability').textContent = (prediction.probability * 100).toFixed(1) + '%';
+                    document.getElementById('attack-level').textContent = prediction.risk_level.toUpperCase();
+                    document.getElementById('attack-level').className = `badge bg-${getRiskColor(prediction.risk_level)}`;
+                    
+                    // Отображаем детали прогноза
+                    const detailsContainer = document.getElementById('prediction-details');
+                    detailsContainer.innerHTML = `
+                        <small class="text-muted">${prediction.details}</small>
+                    `;
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки прогнозов:', error);
+            }
+        }
+
+        // Загрузка предупреждений
+        async function loadWarnings() {
+            try {
+                const response = await fetch('/api/predictive/warnings');
+                const data = await response.json();
+                
+                if (data.success && data.warning) {
+                    const warning = data.warning;
+                    const container = document.getElementById('warnings-container');
+                    
+                    container.innerHTML = `
+                        <div class="alert-card alert-${warning.severity}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">${warning.message}</h6>
+                                    <p class="mb-2">${warning.timestamp}</p>
+                                    <ul class="mb-0">
+                                        ${warning.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                                    </ul>
+                                </div>
+                                <span class="badge bg-${getRiskColor(warning.risk_level)}">${warning.risk_level.toUpperCase()}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('warnings-container').innerHTML = `
+                        <div class="text-center text-muted">
+                            <i class="fas fa-shield-alt fa-3x mb-3"></i>
+                            <p>Нет активных предупреждений</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки предупреждений:', error);
+            }
+        }
+
+        // Загрузка трендов
+        async function loadTrends() {
+            try {
+                const response = await fetch('/api/predictive/trends');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const trends = data.trends;
+                    
+                    // График пиковых часов
+                    if (trends.peak_hours) {
+                        createTrendsChart(trends.peak_hours);
+                    }
+                    
+                    // График паттернов по дням
+                    if (trends.daily_patterns) {
+                        createPatternsChart(trends.daily_patterns);
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки трендов:', error);
+            }
+        }
+
+        // Создание графика трендов
+        function createTrendsChart(data) {
+            const ctx = document.getElementById('trends-chart').getContext('2d');
+            
+            if (trendsChart) {
+                trendsChart.destroy();
+            }
+            
+            trendsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(data).map(hour => hour + ':00'),
+                    datasets: [{
+                        label: 'Активность',
+                        data: Object.values(data),
+                        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Пиковые часы активности'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Создание графика паттернов
+        function createPatternsChart(data) {
+            const ctx = document.getElementById('patterns-chart').getContext('2d');
+            
+            if (patternsChart) {
+                patternsChart.destroy();
+            }
+            
+            patternsChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(data),
+                    datasets: [{
+                        data: Object.values(data),
+                        backgroundColor: [
+                            '#FF6384',
+                            '#36A2EB',
+                            '#FFCE56',
+                            '#4BC0C0',
+                            '#9966FF',
+                            '#FF9F40',
+                            '#FF6384'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Активность по дням недели'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Получение цвета для уровня риска
+        function getRiskColor(level) {
+            switch (level) {
+                case 'critical': return 'danger';
+                case 'high': return 'warning';
+                case 'medium': return 'info';
+                case 'low': return 'primary';
+                default: return 'secondary';
+            }
+        }
+
+        // Обучение моделей
+        async function trainModels() {
+            showLoading(true);
+            try {
+                const response = await fetch('/api/predictive/train', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`Модели обучены успешно! Точность: ${JSON.stringify(data.model_scores)}`);
+                    loadSystemStatus();
+                } else {
+                    alert('Ошибка обучения моделей: ' + data.error);
+                }
+            } catch (error) {
+                alert('Ошибка сети: ' + error);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Обновление прогнозов
+        async function updatePredictions() {
+            showLoading(true);
+            try {
+                await Promise.all([
+                    loadRiskScore(),
+                    loadPredictions(),
+                    loadWarnings()
+                ]);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Анализ трендов
+        async function analyzeTrends() {
+            showLoading(true);
+            try {
+                await loadTrends();
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Показать/скрыть загрузку
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>

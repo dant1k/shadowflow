@@ -8,6 +8,7 @@ import json
 import os
 from datetime import datetime
 from analyzer.cluster import TradeClusterAnalyzer
+from analyzer.predictive_analytics import PredictiveAnalytics
 from api.polymarket import PolymarketAPI
 from ai.anomaly_detector import AnomalyDetector
 from ai.predictive_analyzer import PredictiveAnalyzer
@@ -22,6 +23,7 @@ analyzer = TradeClusterAnalyzer(sync_threshold_seconds=180)
 api = PolymarketAPI()
 ai_detector = AnomalyDetector()
 predictive_analyzer = PredictiveAnalyzer()
+predictive_analytics = PredictiveAnalytics()
 
 # WebSocket клиенты для уведомлений
 websocket_clients = []
@@ -156,8 +158,13 @@ def get_markets():
 def get_ai_analysis():
     """API endpoint для получения AI-анализа аномалий"""
     try:
+        # Создаем новый экземпляр API с правильным путем к кэшу
+        from api.polymarket import PolymarketAPI
+        api_instance = PolymarketAPI()
+        api_instance.cache_file = '/app/data/cache.json'  # Правильный путь для Docker
+        
         # Загружаем данные из кэша
-        trades = api.load_from_cache()
+        trades = api_instance.load_from_cache()
         if not trades:
             return jsonify({
                 'success': False,
@@ -181,7 +188,12 @@ def get_ai_analysis():
 def get_anomalies():
     """API endpoint для получения аномальных сделок"""
     try:
-        trades = api.load_from_cache()
+        # Создаем новый экземпляр API с правильным путем к кэшу
+        from api.polymarket import PolymarketAPI
+        api_instance = PolymarketAPI()
+        api_instance.cache_file = '/app/data/cache.json'  # Правильный путь для Docker
+        
+        trades = api_instance.load_from_cache()
         if not trades:
             return jsonify({
                 'success': False,
@@ -352,11 +364,135 @@ def get_ml_models():
 def api_market_info(market_id):
     """API endpoint для получения информации о конкретном рынке"""
     try:
-        market_info = api.get_market_info(market_id)
+        # Создаем новый экземпляр API с правильным путем к кэшу
+        from api.polymarket import PolymarketAPI
+        api_instance = PolymarketAPI()
+        api_instance.cache_file = '/app/data/cache.json'  # Правильный путь для Docker
+        
+        market_info = api_instance.get_market_info(market_id)
         return jsonify({
             'success': True,
             'market': market_info
         })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/polymarket/events')
+def get_polymarket_events():
+    """API endpoint для получения актуальных событий Polymarket"""
+    try:
+        import requests
+        import time
+        
+        # Проверяем кэш
+        cache_file = '/app/data/polymarket_events_cache.json'
+        cache_duration = 300  # 5 минут
+        
+        # Загружаем кэш если существует
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+                if time.time() - cache_data.get('timestamp', 0) < cache_duration:
+                    return jsonify({
+                        'success': True,
+                        'events': cache_data.get('events', []),
+                        'cached': True
+                    })
+        
+        # Получаем данные из Gamma API (более надежно)
+        url = "https://gamma-api.polymarket.com/markets"
+        params = {
+            'limit': 100,  # Увеличиваем лимит для лучшей фильтрации
+            'active': 'true',
+            'order': 'volume',
+            'ascending': 'false'
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code != 200:
+            return jsonify({
+                'success': False,
+                'error': f'Gamma API error: {response.status_code}'
+            }), 500
+        
+        data = response.json()
+        markets = data if isinstance(data, list) else data.get('markets', [])
+        
+        # Фильтруем только активные рынки и форматируем
+        events = []
+        for market in markets:
+            question = market.get('question', '')
+            slug = market.get('slug', '')
+            volume = market.get('volume', 0)
+            liquidity = market.get('liquidity', 0)
+            end_date = market.get('endDate', market.get('end_date', ''))
+            
+            # Проверяем, что событие актуальное (не старше 1 года)
+            if end_date:
+                try:
+                    from datetime import datetime, timedelta
+                    # Исправляем парсинг даты
+                    if end_date.endswith('Z'):
+                        event_date = datetime.fromisoformat(end_date[:-1] + '+00:00')
+                    else:
+                        event_date = datetime.fromisoformat(end_date)
+                    
+                    one_year_ago = datetime.now().replace(tzinfo=event_date.tzinfo) - timedelta(days=365)
+                    
+                    # Пропускаем события старше года
+                    if event_date < one_year_ago:
+                        continue
+                except Exception as e:
+                    # Если не можем распарсить дату, пропускаем событие
+                    continue
+            
+            # Проверяем, что рынок активен и не решен
+            if (market.get('active', True) and 
+                not market.get('resolved', False) and 
+                question and 
+                volume > 0):  # Только рынки с объемом
+                
+                # Создаем slug если его нет
+                if not slug:
+                    import re
+                    slug = re.sub(r'[^\w\s-]', '', question.lower())
+                    slug = re.sub(r'[-\s]+', '-', slug)
+                    slug = slug.strip('-')[:50]
+                    if not slug:
+                        slug = f'market-{market.get("id", "unknown")}'
+                
+                event = {
+                    'question': question,
+                    'url': f'https://polymarket.com/event/{slug}',
+                    'volume': volume,
+                    'liquidity': liquidity,
+                    'end_date': end_date,
+                    'slug': slug
+                }
+                events.append(event)
+        
+        # Сортируем по объему и берем топ-10
+        events.sort(key=lambda x: x['volume'], reverse=True)
+        top_events = events[:10]
+        
+        # Сохраняем в кэш
+        cache_data = {
+            'events': top_events,
+            'timestamp': time.time()
+        }
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+        
+        return jsonify({
+            'success': True,
+            'events': top_events,
+            'cached': False
+        })
+        
     except Exception as e:
         return jsonify({
             'success': False,
@@ -534,6 +670,170 @@ def get_update_count():
     except:
         pass
     return 0
+
+# ===== ПРЕДСКАЗАТЕЛЬНАЯ АНАЛИТИКА API =====
+
+@app.route('/api/predictive/status')
+def predictive_status():
+    """API endpoint для получения статуса предсказательной аналитики"""
+    try:
+        summary = predictive_analytics.get_analytics_summary()
+        return jsonify({
+            'success': True,
+            'status': summary
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictive/train', methods=['POST'])
+def train_predictive_models():
+    """API endpoint для обучения моделей предсказательной аналитики"""
+    try:
+        print("🎯 Запуск обучения моделей предсказательной аналитики...")
+        scores = predictive_analytics.train_models()
+        
+        return jsonify({
+            'success': True,
+            'model_scores': scores,
+            'message': f'Обучено {len(scores)} моделей'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictive/predict')
+def predict_attacks():
+    """API endpoint для прогнозирования координированных атак"""
+    try:
+        # Получаем последние сделки из кэша
+        hours_back = request.args.get('hours', 1, type=int)
+        
+        # Загружаем данные из кэша
+        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            recent_trades = cache_data.get('trades', [])[:100]  # Берем последние 100 сделок
+        else:
+            recent_trades = []
+        
+        if not recent_trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных о сделках'
+            }), 400
+        
+        # Прогнозируем атаки
+        prediction = predictive_analytics.predict_coordinated_attacks(recent_trades)
+        
+        return jsonify({
+            'success': True,
+            'prediction': prediction,
+            'trades_analyzed': len(recent_trades)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictive/trends')
+def get_predictive_trends():
+    """API endpoint для получения анализа трендов"""
+    try:
+        days_back = request.args.get('days', 7, type=int)
+        trends = predictive_analytics.analyze_trends(days_back)
+        
+        return jsonify({
+            'success': True,
+            'trends': trends,
+            'period_days': days_back
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictive/risk-score')
+def get_risk_score():
+    """API endpoint для получения риск-скора в реальном времени"""
+    try:
+        # Получаем последние сделки из кэша
+        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            recent_trades = cache_data.get('trades', [])[:50]  # Берем последние 50 сделок
+        else:
+            recent_trades = []
+        
+        if not recent_trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных о сделках'
+            }), 400
+        
+        # Вычисляем риск-скор
+        risk_score = predictive_analytics.get_risk_score(recent_trades)
+        
+        return jsonify({
+            'success': True,
+            'risk_score': risk_score,
+            'trades_analyzed': len(recent_trades)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/predictive/warnings')
+def get_warnings():
+    """API endpoint для получения предупреждений"""
+    try:
+        # Получаем последние сделки из кэша
+        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            recent_trades = cache_data.get('trades', [])[:100]  # Берем последние 100 сделок
+        else:
+            recent_trades = []
+        
+        if not recent_trades:
+            return jsonify({
+                'success': False,
+                'error': 'Нет данных о сделках'
+            }), 400
+        
+        # Прогнозируем атаки
+        prediction = predictive_analytics.predict_coordinated_attacks(recent_trades)
+        
+        # Генерируем предупреждение
+        warning = predictive_analytics.generate_early_warning(prediction)
+        
+        return jsonify({
+            'success': True,
+            'warning': warning,
+            'prediction': prediction,
+            'trades_analyzed': len(recent_trades)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/predictive')
+def predictive_dashboard():
+    """Страница предсказательной аналитики"""
+    return render_template('predictive.html')
 
 if __name__ == '__main__':
     # Создаем необходимые директории

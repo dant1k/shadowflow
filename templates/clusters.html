@@ -216,14 +216,20 @@ function displayClusters() {
                 description: cluster.market_question || 'Нет описания'
             };
             
+            // Улучшаем отображение названия рынка
+            let displayName = marketInfo.name;
+            if (!displayName || displayName.startsWith('Market 0x') || displayName.length > 60) {
+                displayName = cluster.market_question || `Market ${cluster.market_id.substring(0, 8)}...`;
+            }
+            
             return `
                 <div class="card cluster-card ${getRiskClass(cluster.sync_score)} mb-3">
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-8">
                                 <h5 class="market-name">
-                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none">
-                                        ${marketInfo.name}
+                                    <a href="${marketInfo.url}" target="_blank" class="text-decoration-none" title="${marketInfo.name}">
+                                        ${displayName}
                                         <i class="fas fa-external-link-alt ms-1"></i>
                                     </a>
                                 </h5>
