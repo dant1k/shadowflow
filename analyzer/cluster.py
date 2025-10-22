@@ -283,7 +283,7 @@ class TradeClusterAnalyzer:
     def save_clusters_to_file(self, clusters: List[Dict], filename: str = None) -> None:
         """Сохраняет результаты анализа в файл"""
         if filename is None:
-            filename = "/Users/Kos/shadowflow/data/clusters.json"
+            filename = "/app/data/clusters.json"
         
         try:
             os.makedirs(os.path.dirname(filename), exist_ok=True)

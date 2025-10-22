@@ -50,7 +50,7 @@ class PredictiveAnalytics:
                 self.cache_file = "/app/data/cache.json"
             else:
                 # Локальное окружение
-                self.cache_file = "/Users/Kos/shadowflow/data/cache.json"
+                self.cache_file = "/app/data/cache.json"
         else:
             self.cache_file = cache_file
             

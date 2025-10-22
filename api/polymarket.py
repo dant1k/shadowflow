@@ -18,7 +18,7 @@ class PolymarketAPI:
         self.clob_api_url = "https://clob.polymarket.com"
         self.wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/"
         self.rtds_url = "wss://ws-live-data.polymarket.com"
-        self.cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        self.cache_file = "/app/data/cache.json"
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'ShadowFlow/1.0',

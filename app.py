@@ -18,6 +18,14 @@ import time
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'shadowflow-secret-key-2024'
 
+# Middleware для предотвращения кэширования
+@app.after_request
+def after_request(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 # Инициализация компонентов
 analyzer = TradeClusterAnalyzer(sync_threshold_seconds=180)
 api = PolymarketAPI()
@@ -453,7 +461,7 @@ def get_polymarket_events():
             if (market.get('active', True) and 
                 not market.get('resolved', False) and 
                 question and 
-                volume > 0):  # Только рынки с объемом
+                float(volume or 0) > 0):  # Только рынки с объемом
                 
                 # Создаем slug если его нет
                 if not slug:
@@ -567,7 +575,7 @@ def scheduler_status():
     """API для получения статуса планировщика"""
     try:
         # Проверяем статус планировщика
-        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        cache_file = "/app/data/cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -620,7 +628,7 @@ def update_data():
             'update_count': get_update_count() + 1
         }
         
-        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        cache_file = "/app/data/cache.json"
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, 'w', encoding='utf-8') as f:
             json.dump(cache_data, f, indent=2, ensure_ascii=False)
@@ -662,7 +670,7 @@ def stop_scheduler():
 def get_update_count():
     """Получает количество обновлений из кэша"""
     try:
-        cache_file = "/Users/Kos/shadowflow/data/cache.json"
+        cache_file = "/app/data/cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -714,7 +722,7 @@ def predict_attacks():
         hours_back = request.args.get('hours', 1, type=int)
         
         # Загружаем данные из кэша
-        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        cache_file = "/app/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
@@ -765,7 +773,7 @@ def get_risk_score():
     """API endpoint для получения риск-скора в реальном времени"""
     try:
         # Получаем последние сделки из кэша
-        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        cache_file = "/app/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
@@ -798,7 +806,7 @@ def get_warnings():
     """API endpoint для получения предупреждений"""
     try:
         # Получаем последние сделки из кэша
-        cache_file = "/Users/Kos/shadowflow/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
+        cache_file = "/app/data/cache.json" if not os.path.exists("/app") else "/app/data/cache.json"
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
@@ -837,9 +845,11 @@ def predictive_dashboard():
 
 if __name__ == '__main__':
     # Создаем необходимые директории
-    os.makedirs('/Users/Kos/shadowflow/data', exist_ok=True)
-    os.makedirs('/Users/Kos/shadowflow/templates', exist_ok=True)
-    os.makedirs('/Users/Kos/shadowflow/static/css', exist_ok=True)
-    os.makedirs('/Users/Kos/shadowflow/static/js', exist_ok=True)
+    # Создаем директории только если мы не в Docker
+    if not os.path.exists("/app"):
+        os.makedirs('/Users/Kos/shadowflow/data', exist_ok=True)
+        os.makedirs('/Users/Kos/shadowflow/templates', exist_ok=True)
+        os.makedirs('/Users/Kos/shadowflow/static/css', exist_ok=True)
+        os.makedirs('/Users/Kos/shadowflow/static/js', exist_ok=True)
     
     app.run(debug=True, host='0.0.0.0', port=5001)

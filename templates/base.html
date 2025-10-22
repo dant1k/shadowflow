@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>{% block title %}ShadowFlow - Анализ координированных действий{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
@@ -257,7 +260,13 @@
         async function updateData() {
             showLoading();
             try {
-                const response = await fetch('/api/update-data?hours=6');
+                const response = await fetch('/api/update-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ hours: 6 })
+                });
                 const data = await response.json();
                 
                 if (data.success) {
